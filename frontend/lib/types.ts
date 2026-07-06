@@ -48,6 +48,7 @@ export interface EventInput {
 export interface Habit {
   id: number;
   name: string;
+  category: string;
   repeat_days: string;
   target_time: string;
   active: boolean;

@@ -5,12 +5,14 @@ from pydantic import BaseModel
 
 class HabitCreate(BaseModel):
     name: str
+    category: str = ""
     repeat_days: str = ""  # comma-separated 0=Mon..6=Sun, "" = every day
     target_time: time
 
 
 class HabitUpdate(BaseModel):
     name: str | None = None
+    category: str | None = None
     repeat_days: str | None = None
     target_time: time | None = None
     active: bool | None = None
@@ -19,6 +21,7 @@ class HabitUpdate(BaseModel):
 class HabitOut(BaseModel):
     id: int
     name: str
+    category: str
     repeat_days: str
     target_time: time
     active: bool

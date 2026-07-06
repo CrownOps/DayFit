@@ -17,6 +17,7 @@ export default function HabitsPage() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Habit | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   const today = isoDate(new Date());
   const now = new Date();
@@ -56,7 +57,7 @@ export default function HabitsPage() {
   }
 
   async function remove(habit: Habit) {
-    if (!confirm(`'${habit.name}' 습관을 삭제할까요?`)) return;
+    if (!confirm(`'${habit.name}' 데일리 루틴을 삭제할까요?`)) return;
     try {
       await habitsApi.remove(habit.id);
       load();
@@ -65,21 +66,55 @@ export default function HabitsPage() {
     }
   }
 
+  const categories = Array.from(
+    new Set(habits.map((h) => h.category).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, "ko"));
+  const filtered =
+    categoryFilter === "all"
+      ? habits
+      : categoryFilter === "none"
+        ? habits.filter((h) => !h.category)
+        : habits.filter((h) => h.category === categoryFilter);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">습관</h1>
+        <h1 className="text-xl font-semibold text-text-primary">데일리 루틴</h1>
         <Button
           onClick={() => {
             setEditing(null);
             setModalOpen(true);
           }}
         >
-          + 습관
+          + 데일리 루틴
         </Button>
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+
+      {/* Category filter */}
+      {categories.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { key: "all", label: "전체" },
+            ...categories.map((c) => ({ key: c, label: c })),
+            { key: "none", label: "미분류" },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setCategoryFilter(key)}
+              className={clsx(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                categoryFilter === key
+                  ? "bg-accent text-white"
+                  : "bg-surface border border-border text-text-secondary hover:text-text-primary"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="grid place-items-center py-16">
@@ -88,12 +123,16 @@ export default function HabitsPage() {
       ) : habits.length === 0 ? (
         <Card>
           <p className="text-sm text-text-tertiary">
-            아직 등록된 습관이 없습니다. 매일 반복할 습관을 추가해보세요.
+            아직 등록된 데일리 루틴이 없습니다. 매일 반복할 데일리 루틴을 추가해보세요.
           </p>
+        </Card>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <p className="text-sm text-text-tertiary">이 카테고리에 해당하는 데일리 루틴이 없습니다.</p>
         </Card>
       ) : (
         <div className="space-y-3">
-          {habits.map((h) => {
+          {filtered.map((h) => {
             const log = logs[h.id];
             const st = stats[h.id];
             const [th, tm] = h.target_time.split(":").map(Number);
@@ -118,15 +157,22 @@ export default function HabitsPage() {
                       {h.name}
                       {!h.active && <span className="ml-2 text-xs text-text-tertiary">(비활성)</span>}
                     </div>
-                    <div className="text-xs text-text-tertiary">
-                      <span className="font-mono">{timeLabel(h.target_time)}</span> ·{" "}
-                      {h.repeat_days
-                        ? h.repeat_days
-                            .split(",")
-                            .filter(Boolean)
-                            .map((d) => WEEKDAY_LABELS[Number(d)])
-                            .join(" ")
-                        : "매일"}
+                    <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+                      {h.category && (
+                        <span className="rounded-full bg-accent/10 text-accent px-1.5 py-0.5 font-medium">
+                          {h.category}
+                        </span>
+                      )}
+                      <span>
+                        <span className="font-mono">{timeLabel(h.target_time)}</span> ·{" "}
+                        {h.repeat_days
+                          ? h.repeat_days
+                              .split(",")
+                              .filter(Boolean)
+                              .map((d) => WEEKDAY_LABELS[Number(d)])
+                              .join(" ")
+                          : "매일"}
+                      </span>
                     </div>
                   </div>
                   {(log?.streak_count ?? 0) > 0 && (
@@ -177,6 +223,7 @@ export default function HabitsPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         habit={editing}
+        categories={categories}
         onSaved={() => {
           setModalOpen(false);
           load();
@@ -190,14 +237,17 @@ function HabitModal({
   open,
   onClose,
   habit,
+  categories,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   habit: Habit | null;
+  categories: string[];
   onSaved: () => void;
 }) {
   const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
   const [time, setTime] = useState("07:30");
   const [days, setDays] = useState<number[]>([]);
   const [active, setActive] = useState(true);
@@ -208,11 +258,13 @@ function HabitModal({
     if (!open) return;
     if (habit) {
       setName(habit.name);
+      setCategory(habit.category ?? "");
       setTime(timeLabel(habit.target_time));
       setDays(habit.repeat_days ? habit.repeat_days.split(",").filter(Boolean).map(Number) : []);
       setActive(habit.active);
     } else {
       setName("");
+      setCategory("");
       setTime("07:30");
       setDays([]);
       setActive(true);
@@ -231,6 +283,7 @@ function HabitModal({
     try {
       const body = {
         name,
+        category: category.trim(),
         target_time: `${time}:00`,
         repeat_days: days.join(","),
       };
@@ -245,11 +298,26 @@ function HabitModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={habit ? "습관 수정" : "새 습관"}>
+    <Modal open={open} onClose={onClose} title={habit ? "데일리 루틴 수정" : "새 데일리 루틴"}>
       <form onSubmit={save} className="space-y-3">
         <div>
           <Label htmlFor="h-name">이름</Label>
           <Input id="h-name" value={name} onChange={(e) => setName(e.target.value)} required />
+        </div>
+        <div>
+          <Label htmlFor="h-category">카테고리 (선택)</Label>
+          <Input
+            id="h-category"
+            list="habit-categories"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="예: 건강, 학습, 운동"
+          />
+          <datalist id="habit-categories">
+            {categories.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </div>
         <div>
           <Label htmlFor="h-time">목표 시각</Label>

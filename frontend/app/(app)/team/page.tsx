@@ -7,7 +7,7 @@ import type { Snippet, TeamHealthEntry } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Card, Spinner } from "@/components/ui";
-import { Heatmap } from "@/components/Heatmap";
+import { Heatmap, conditionLevel } from "@/components/Heatmap";
 import { clsx } from "@/lib/clsx";
 
 function barColor(score: number | null): string {
@@ -24,9 +24,16 @@ function textColor(score: number | null): string {
   return "text-danger";
 }
 
+const PERIODS = [
+  { key: 7, label: "1주" },
+  { key: 14, label: "2주" },
+  { key: 30, label: "1개월" },
+] as const;
+
 export default function TeamPage() {
   const [health, setHealth] = useState<TeamHealthEntry[]>([]);
   const [teamSnippets, setTeamSnippets] = useState<Snippet[]>([]);
+  const [days, setDays] = useState<number>(14);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +43,7 @@ export default function TeamPage() {
     try {
       const from = isoDate(addDays(new Date(), -140));
       const [h, snips] = await Promise.all([
-        teamApi.health(),
+        teamApi.health(days),
         snippetsApi.list("team", from, isoDate(new Date())),
       ]);
       setHealth(h);
@@ -46,7 +53,7 @@ export default function TeamPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     load();
@@ -54,7 +61,13 @@ export default function TeamPage() {
 
   const heatData: Record<string, HeatCell> = {};
   for (const s of teamSnippets) {
-    if (!heatData[s.date]) heatData[s.date] = { level: 3, title: `${s.date} · 팀 스니펫 작성` };
+    // Intensity by condition score; keep the highest-scoring member per day.
+    const level = conditionLevel(s.condition_score);
+    const existing = heatData[s.date];
+    const title = `${s.date}${s.condition_score !== null ? ` · 컨디션 ${s.condition_score}/10` : ""}${
+      s.author ? ` · ${s.author.name}` : ""
+    }`;
+    if (!existing || level > existing.level) heatData[s.date] = { level, title };
   }
 
   const scored = health.filter((m) => m.condition_score !== null);
@@ -65,9 +78,27 @@ export default function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">팀 헬스체크</h1>
-        <p className="text-sm text-text-secondary">CrownOps 팀 컨디션 (최근 기록 기준)</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">팀 헬스체크</h1>
+          <p className="text-sm text-text-secondary">
+            CrownOps 팀 컨디션 (최근 {PERIODS.find((p) => p.key === days)?.label} 기록 기준)
+          </p>
+        </div>
+        <div className="inline-flex shrink-0 rounded-lg border border-border bg-surface p-0.5">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setDays(p.key)}
+              className={clsx(
+                "px-2.5 py-1 rounded-md text-sm transition-colors",
+                days === p.key ? "bg-accent text-white" : "text-text-secondary"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}

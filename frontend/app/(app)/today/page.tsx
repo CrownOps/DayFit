@@ -219,10 +219,10 @@ export default function TodayPage() {
           {/* Habits — hidden in month view to keep the calendar focused */}
           {viewMode !== "month" && (
             <section className="space-y-3">
-              <h2 className="text-base font-semibold text-text-primary">습관</h2>
+              <h2 className="text-base font-semibold text-text-primary">데일리 루틴</h2>
               <Card className="divide-y divide-border p-0">
                 {scheduledToday.length === 0 ? (
-                  <p className="p-4 text-sm text-text-tertiary">오늘 예정된 습관이 없습니다.</p>
+                  <p className="p-4 text-sm text-text-tertiary">오늘 예정된 데일리 루틴이 없습니다.</p>
                 ) : (
                   scheduledToday.map((h) => (
                     <HabitRow

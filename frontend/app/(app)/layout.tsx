@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui";
-import { LogoLockup } from "@/components/Logo";
+import { FullLogo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SidebarNav, BottomNav } from "@/components/AppNav";
 
@@ -28,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex-1 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-56 md:flex-col border-r border-border bg-surface p-4 gap-6 sticky top-0 h-screen">
-        <LogoLockup />
+        <FullLogo width={188} />
         <SidebarNav />
         <div className="mt-auto space-y-3">
           <ThemeToggle />
@@ -46,7 +46,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
         <header className="md:hidden flex items-center justify-between border-b border-border bg-surface px-4 py-3 sticky top-0 z-10">
-          <LogoLockup />
+          <FullLogo width={150} />
           <ThemeToggle />
         </header>
 
