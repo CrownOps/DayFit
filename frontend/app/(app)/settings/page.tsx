@@ -1,0 +1,237 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
+import { calendarApi, pushApi, usersApi } from "@/lib/resources";
+import type { PushSubscriptionRow } from "@/lib/types";
+import Link from "next/link";
+import { ApiError } from "@/lib/api";
+import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { InstallPrompt } from "@/components/InstallPrompt";
+import {
+  getExistingSubscription,
+  isStandalone,
+  pushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from "@/lib/push";
+
+export default function SettingsPage() {
+  const { user, logout } = useAuth();
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-xl font-semibold text-text-primary">설정</h1>
+
+      <InstallPrompt />
+
+      {/* Appearance */}
+      <Card className="space-y-3">
+        <h2 className="text-sm font-semibold text-text-primary">테마</h2>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-text-secondary">라이트 / 다크 / 시스템</span>
+          <ThemeToggle />
+        </div>
+      </Card>
+
+      <PushSection />
+      <GoogleCalendarSection connected={user?.google_calendar_connected ?? false} />
+      <GcsPulseSection />
+      {user?.is_admin && (
+        <Card className="space-y-2">
+          <h2 className="text-sm font-semibold text-text-primary">관리자</h2>
+          <p className="text-xs text-text-tertiary">초대 코드 발급은 관리자 페이지에서 관리합니다.</p>
+          <Link href="/admin" className="text-sm text-accent font-medium hover:underline">
+            관리자 페이지로 이동 →
+          </Link>
+        </Card>
+      )}
+
+      <Card className="space-y-3">
+        <h2 className="text-sm font-semibold text-text-primary">계정</h2>
+        <div className="text-sm text-text-secondary">{user?.email}</div>
+        <Button variant="danger" onClick={logout}>
+          로그아웃
+        </Button>
+      </Card>
+    </div>
+  );
+}
+
+function PushSection() {
+  const [supported, setSupported] = useState(true);
+  const [subscribed, setSubscribed] = useState(false);
+  const [devices, setDevices] = useState<PushSubscriptionRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [standalone, setStandalone] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const sub = await getExistingSubscription();
+      setSubscribed(!!sub);
+      setDevices(await pushApi.list());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    setSupported(pushSupported());
+    setStandalone(isStandalone());
+    refresh();
+  }, [refresh]);
+
+  async function subscribe() {
+    setBusy(true);
+    setError(null);
+    try {
+      await subscribeToPush(navigator.userAgent.slice(0, 60));
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "구독에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unsubscribe() {
+    setBusy(true);
+    setError(null);
+    try {
+      await unsubscribeFromPush();
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "해제에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">알림 (웹 푸시)</h2>
+      {!supported ? (
+        <p className="text-sm text-text-tertiary">이 브라우저는 웹 푸시를 지원하지 않습니다.</p>
+      ) : (
+        <>
+          {!standalone && (
+            <p className="text-xs text-warning">
+              아이폰은 &quot;홈 화면에 추가&quot;로 설치한 뒤에만 알림을 받을 수 있습니다.
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-text-secondary">
+              이 기기 {subscribed ? "구독됨" : "구독 안 됨"}
+            </span>
+            {subscribed ? (
+              <Button variant="ghost" onClick={unsubscribe} disabled={busy}>
+                구독 해제
+              </Button>
+            ) : (
+              <Button onClick={subscribe} disabled={busy}>
+                {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "알림 켜기"}
+              </Button>
+            )}
+          </div>
+          {devices.length > 0 && (
+            <div className="text-xs text-text-tertiary space-y-1">
+              <div>등록된 기기 {devices.length}대</div>
+            </div>
+          )}
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function GoogleCalendarSection({ connected }: { connected: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { auth_url } = await calendarApi.authorizeUrl();
+      window.location.href = auth_url;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "연결에 실패했습니다");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">Google Calendar</h2>
+      {connected ? (
+        <p className="text-sm text-success">✓ 연결됨</p>
+      ) : (
+        <>
+          <p className="text-xs text-text-tertiary">
+            연결하면 일정을 가져오고, 이 앱에서 만든 일정이 캘린더에 동기화됩니다. 캘린더 자체 알림은 꺼집니다.
+          </p>
+          <Button onClick={connect} disabled={busy}>
+            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "Google Calendar 연결"}
+          </Button>
+        </>
+      )}
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Card>
+  );
+}
+
+function GcsPulseSection() {
+  const [status, setStatus] = useState<boolean | null>(null);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    usersApi
+      .gcsPulseStatus()
+      .then((s) => setStatus(s.connected))
+      .catch(() => setStatus(false));
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await usersApi.setGcsPulseToken(token.trim());
+      setToken("");
+      setStatus(true);
+      setMsg("저장되었습니다.");
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "저장에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">GCS Pulse API 토큰</h2>
+      <p className="text-xs text-text-tertiary">
+        데일리 스니펫과 토큰 쿼터 조회에 필요합니다. GCS Pulse 계정 설정에서 발급받은 토큰을 입력하세요.
+        {status !== null && (
+          <span className={status ? "text-success" : "text-warning"}> · {status ? "등록됨" : "미등록"}</span>
+        )}
+      </p>
+      <div className="flex gap-2">
+        <Input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="API_TOKEN"
+        />
+        <Button onClick={save} disabled={busy || !token.trim()}>
+          저장
+        </Button>
+      </div>
+      {msg && <p className="text-sm text-text-secondary">{msg}</p>}
+    </Card>
+  );
+}

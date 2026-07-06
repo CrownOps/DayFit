@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DayFit design tokens — from docs/UI_디자인가이드.md
+
+   Register the token names with Tailwind (light values as the
+   default), then override the same custom properties at runtime
+   via :root / [data-theme] / prefers-color-scheme so utilities
+   (bg-bg, text-text-primary, ...) AND raw var() usage both react.
+   ============================================================ */
+@theme {
+  --color-bg: #f6f4ef;
+  --color-surface: #fdfcfa;
+  --color-border: #e3dfd6;
+  --color-text-primary: #2b2a27;
+  --color-text-secondary: #6e6a61;
+  --color-text-tertiary: #a29d91;
+  --color-accent: #3e6f68;
+  --color-accent-hover: #2f5750;
+  --color-accent-secondary: #c98a4b;
+  --color-success: #6b9e78;
+  --color-warning: #d2984b;
+  --color-danger: #b5564a;
+  --color-info: #5a80a0;
+
+  --color-cat-class: #3e6f68;
+  --color-cat-meeting: #8c7fa0;
+  --color-cat-personal: #c98a4b;
+  --color-cat-habit: #6b9e78;
+  --color-cat-snippet: #6e6a61;
+
+  --font-sans: var(--font-inter), "Pretendard", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), "JetBrains Mono", monospace;
+}
+
+/* Shared shadow token (not a color) */
+:root {
+  --shadow-card: 0 1px 3px rgba(43, 42, 39, 0.08);
+}
+
+/* ---- Dark palette (explicit override) ---- */
+[data-theme="dark"] {
+  --color-bg: #181816;
+  --color-surface: #232220;
+  --color-border: #38362f;
+  --color-text-primary: #ece8df;
+  --color-text-secondary: #a9a398;
+  --color-text-tertiary: #726d62;
+  --color-accent: #6fa89c;
+  --color-accent-hover: #84bbae;
+  --color-accent-secondary: #e0a968;
+  --color-success: #8cbb92;
+  --color-warning: #e0a968;
+  --color-danger: #d97f73;
+  --color-info: #7fa3c0;
+
+  --color-cat-class: #6fa89c;
+  --color-cat-meeting: #a79bc0;
+  --color-cat-personal: #e0a968;
+  --color-cat-habit: #8cbb92;
+  --color-cat-snippet: #a9a398;
+
+  --shadow-card: none;
+}
+
+/* ---- Follow system preference unless overridden to light ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #181816;
+    --color-surface: #232220;
+    --color-border: #38362f;
+    --color-text-primary: #ece8df;
+    --color-text-secondary: #a9a398;
+    --color-text-tertiary: #726d62;
+    --color-accent: #6fa89c;
+    --color-accent-hover: #84bbae;
+    --color-accent-secondary: #e0a968;
+    --color-success: #8cbb92;
+    --color-warning: #e0a968;
+    --color-danger: #d97f73;
+    --color-info: #7fa3c0;
+
+    --color-cat-class: #6fa89c;
+    --color-cat-meeting: #a79bc0;
+    --color-cat-personal: #e0a968;
+    --color-cat-habit: #8cbb92;
+    --color-cat-snippet: #a9a398;
+
+    --shadow-card: none;
+  }
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html,
+  body {
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

@@ -1,0 +1,296 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { habitsApi } from "@/lib/resources";
+import type { Habit, HabitLog, HabitStats } from "@/lib/types";
+import { isoDate, timeLabel, WEEKDAY_LABELS } from "@/lib/dates";
+import { ApiError } from "@/lib/api";
+import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Modal } from "@/components/Modal";
+import { clsx } from "@/lib/clsx";
+
+export default function HabitsPage() {
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [logs, setLogs] = useState<Record<number, HabitLog>>({});
+  const [stats, setStats] = useState<Record<number, HabitStats>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Habit | null>(null);
+
+  const today = isoDate(new Date());
+  const now = new Date();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [hs, ls] = await Promise.all([habitsApi.list(), habitsApi.logs(today)]);
+      setHabits(hs);
+      setLogs(Object.fromEntries(ls.map((l) => [l.habit_id, l])));
+      const statEntries = await Promise.all(
+        hs.map((h) => habitsApi.stats(h.id, now.getFullYear(), now.getMonth() + 1))
+      );
+      setStats(Object.fromEntries(statEntries.map((s) => [s.habit_id, s])));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다");
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function toggle(habit: Habit) {
+    const current = logs[habit.id]?.completed ?? false;
+    try {
+      const updated = await habitsApi.setCompletion(habit.id, today, !current);
+      setLogs((p) => ({ ...p, [habit.id]: updated }));
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "체크에 실패했습니다");
+    }
+  }
+
+  async function remove(habit: Habit) {
+    if (!confirm(`'${habit.name}' 습관을 삭제할까요?`)) return;
+    try {
+      await habitsApi.remove(habit.id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "삭제에 실패했습니다");
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-text-primary">습관</h1>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setModalOpen(true);
+          }}
+        >
+          + 습관
+        </Button>
+      </div>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      {loading ? (
+        <div className="grid place-items-center py-16">
+          <Spinner className="h-8 w-8" />
+        </div>
+      ) : habits.length === 0 ? (
+        <Card>
+          <p className="text-sm text-text-tertiary">
+            아직 등록된 습관이 없습니다. 매일 반복할 습관을 추가해보세요.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {habits.map((h) => {
+            const log = logs[h.id];
+            const st = stats[h.id];
+            const [th, tm] = h.target_time.split(":").map(Number);
+            const passed = now.getHours() > th || (now.getHours() === th && now.getMinutes() >= tm);
+            const missed = !log?.completed && passed;
+            return (
+              <Card key={h.id} className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => toggle(h)}
+                    className={clsx(
+                      "h-6 w-6 shrink-0 rounded-md border-2 grid place-items-center transition-colors",
+                      log?.completed
+                        ? "bg-success border-success text-white"
+                        : "border-border hover:border-accent"
+                    )}
+                  >
+                    {log?.completed && <span className="text-sm leading-none">✓</span>}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className={clsx("text-sm font-medium", missed ? "text-danger" : "text-text-primary")}>
+                      {h.name}
+                      {!h.active && <span className="ml-2 text-xs text-text-tertiary">(비활성)</span>}
+                    </div>
+                    <div className="text-xs text-text-tertiary">
+                      <span className="font-mono">{timeLabel(h.target_time)}</span> ·{" "}
+                      {h.repeat_days
+                        ? h.repeat_days
+                            .split(",")
+                            .filter(Boolean)
+                            .map((d) => WEEKDAY_LABELS[Number(d)])
+                            .join(" ")
+                        : "매일"}
+                    </div>
+                  </div>
+                  {(log?.streak_count ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-secondary px-2 py-0.5 text-xs font-medium font-mono text-white">
+                      🔥 {log?.streak_count}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setEditing(h);
+                      setModalOpen(true);
+                    }}
+                    className="text-text-tertiary hover:text-text-primary text-sm px-1"
+                  >
+                    수정
+                  </button>
+                  <button
+                    onClick={() => remove(h)}
+                    className="text-text-tertiary hover:text-danger text-sm px-1"
+                  >
+                    삭제
+                  </button>
+                </div>
+
+                {st && (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-text-secondary mb-1">
+                      <span>{st.month} 완료율</span>
+                      <span className="font-mono">
+                        {st.completed_days}/{st.total_days} · {Math.round(st.completion_rate * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-border overflow-hidden">
+                      <div
+                        className="h-full bg-success rounded-full"
+                        style={{ width: `${Math.round(st.completion_rate * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <HabitModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        habit={editing}
+        onSaved={() => {
+          setModalOpen(false);
+          load();
+        }}
+      />
+    </div>
+  );
+}
+
+function HabitModal({
+  open,
+  onClose,
+  habit,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  habit: Habit | null;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [time, setTime] = useState("07:30");
+  const [days, setDays] = useState<number[]>([]);
+  const [active, setActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    if (habit) {
+      setName(habit.name);
+      setTime(timeLabel(habit.target_time));
+      setDays(habit.repeat_days ? habit.repeat_days.split(",").filter(Boolean).map(Number) : []);
+      setActive(habit.active);
+    } else {
+      setName("");
+      setTime("07:30");
+      setDays([]);
+      setActive(true);
+    }
+    setError(null);
+  }, [open, habit]);
+
+  function toggleDay(d: number) {
+    setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {
+        name,
+        target_time: `${time}:00`,
+        repeat_days: days.join(","),
+      };
+      if (habit) await habitsApi.update(habit.id, { ...body, active });
+      else await habitsApi.create(body);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "저장에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={habit ? "습관 수정" : "새 습관"}>
+      <form onSubmit={save} className="space-y-3">
+        <div>
+          <Label htmlFor="h-name">이름</Label>
+          <Input id="h-name" value={name} onChange={(e) => setName(e.target.value)} required />
+        </div>
+        <div>
+          <Label htmlFor="h-time">목표 시각</Label>
+          <Input id="h-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+        </div>
+        <div>
+          <Label>반복 (선택 안 하면 매일)</Label>
+          <div className="flex gap-1">
+            {WEEKDAY_LABELS.map((label, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => toggleDay(i)}
+                className={clsx(
+                  "flex-1 rounded-md py-1.5 text-sm transition-colors",
+                  days.includes(i)
+                    ? "bg-accent text-white"
+                    : "bg-bg border border-border text-text-secondary"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {habit && (
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            활성
+          </label>
+        )}
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            취소
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
