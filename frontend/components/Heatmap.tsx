@@ -8,6 +8,19 @@ export interface HeatCell {
   title: string;
 }
 
+/**
+ * Map a health-check condition score (1–10) to a heat intensity level.
+ * Intensity reflects the *score*, not how many snippets exist — higher
+ * condition = darker cell. A written snippet with no score stays faint (1).
+ */
+export function conditionLevel(score: number | null): HeatCell["level"] {
+  if (score === null) return 1;
+  if (score >= 9) return 4;
+  if (score >= 7) return 3;
+  if (score >= 4) return 2;
+  return 1;
+}
+
 const LEVEL_CLASS = [
   "bg-border", // 0 — no entry
   "bg-accent/25",

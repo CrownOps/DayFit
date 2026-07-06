@@ -20,6 +20,9 @@ app = FastAPI(title="DayFit API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
+    # Also accept any localhost/127.0.0.1 port so local dev frontends work
+    # regardless of the (auto-assigned) port they run on.
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

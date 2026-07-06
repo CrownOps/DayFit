@@ -6,18 +6,9 @@ import type { Snippet } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, Spinner, Textarea } from "@/components/ui";
-import { Heatmap, type HeatCell } from "@/components/Heatmap";
+import { Heatmap, conditionLevel, type HeatCell } from "@/components/Heatmap";
 import { clsx } from "@/lib/clsx";
 import { SNIPPET_TEMPLATE } from "@/lib/snippetTemplate";
-
-function scoreToLevel(score: number | null, written: boolean): HeatCell["level"] {
-  if (!written) return 0;
-  if (score === null) return 2;
-  if (score >= 8) return 4;
-  if (score >= 5) return 3;
-  if (score >= 1) return 2;
-  return 1;
-}
 
 export default function SnippetsPage() {
   const [scope, setScope] = useState<"own" | "team">("own");
@@ -27,6 +18,10 @@ export default function SnippetsPage() {
 
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Filters for the recent list (member is team-scope only).
+  const [memberFilter, setMemberFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>("");
 
   const today = isoDate(new Date());
 
@@ -62,8 +57,9 @@ export default function SnippetsPage() {
   const heatData = useMemo(() => {
     const map: Record<string, HeatCell> = {};
     for (const s of snippets) {
-      // In team scope, multiple members may share a date; keep the highest level.
-      const level = scoreToLevel(s.condition_score, true);
+      // Intensity is driven by the condition score. In team scope multiple
+      // members may share a date; keep the highest-scoring one.
+      const level = conditionLevel(s.condition_score);
       const existing = map[s.date];
       const title = `${s.date}${s.condition_score !== null ? ` · 컨디션 ${s.condition_score}/10` : ""}${
         scope === "team" && s.author ? ` · ${s.author.name}` : ""
@@ -87,10 +83,33 @@ export default function SnippetsPage() {
     }
   }
 
-  const recent = useMemo(
-    () => [...snippets].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 20),
-    [snippets]
-  );
+  // Reset filters when switching scope (member filter is meaningless in own scope).
+  useEffect(() => {
+    setMemberFilter("all");
+    setDateFilter("");
+  }, [scope]);
+
+  // Distinct authors present in the loaded team snippets, for the member dropdown.
+  const members = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const s of snippets) {
+      if (s.author) map.set(s.author.id, s.author.name);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "ko"));
+  }, [snippets]);
+
+  const recent = useMemo(() => {
+    return [...snippets]
+      .filter((s) => {
+        if (dateFilter && s.date !== dateFilter) return false;
+        if (scope === "team" && memberFilter !== "all") {
+          if (String(s.author?.id ?? "") !== memberFilter) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 50);
+  }, [snippets, scope, memberFilter, dateFilter]);
 
   return (
     <div className="space-y-6">
@@ -151,7 +170,7 @@ export default function SnippetsPage() {
             {scope === "own" ? "내 잔디" : "팀 잔디"}
           </h2>
           <div className="flex items-center gap-1 text-xs text-text-tertiary">
-            <span>적음</span>
+            <span>컨디션 낮음</span>
             {[1, 2, 3, 4].map((l) => (
               <span
                 key={l}
@@ -161,7 +180,7 @@ export default function SnippetsPage() {
                 )}
               />
             ))}
-            <span>많음</span>
+            <span>높음</span>
           </div>
         </div>
         {loading ? (
@@ -175,27 +194,96 @@ export default function SnippetsPage() {
 
       {/* Recent snippets */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-text-primary">최근 기록</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-text-primary">최근 기록</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {scope === "team" && (
+              <select
+                value={memberFilter}
+                onChange={(e) => setMemberFilter(e.target.value)}
+                aria-label="팀원 필터"
+                className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+              >
+                <option value="all">팀원 전체</option>
+                {members.map(([id, name]) => (
+                  <option key={id} value={String(id)}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              type="date"
+              value={dateFilter}
+              max={today}
+              onChange={(e) => setDateFilter(e.target.value)}
+              aria-label="날짜 필터"
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-text-primary focus:border-accent outline-none"
+            />
+            {(dateFilter || memberFilter !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilter("");
+                  setMemberFilter("all");
+                }}
+                className="text-xs text-accent hover:underline"
+              >
+                초기화
+              </button>
+            )}
+          </div>
+        </div>
         {!loading && recent.length === 0 && (
           <Card>
-            <p className="text-sm text-text-tertiary">아직 작성된 스니펫이 없습니다.</p>
+            <p className="text-sm text-text-tertiary">
+              {dateFilter || memberFilter !== "all"
+                ? "조건에 맞는 스니펫이 없습니다."
+                : "아직 작성된 스니펫이 없습니다."}
+            </p>
           </Card>
         )}
         {recent.map((s) => (
-          <Card key={s.id} className="space-y-1">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-mono text-text-secondary">
-                {s.date}
-                {scope === "team" && s.author ? ` · ${s.author.name}` : ""}
-              </div>
-              {s.condition_score !== null && (
-                <span className="text-xs font-mono text-text-secondary">컨디션 {s.condition_score}/10</span>
-              )}
-            </div>
-            <p className="text-sm text-text-primary whitespace-pre-wrap line-clamp-4">{s.content}</p>
-          </Card>
+          <SnippetCard key={s.id} snippet={s} showAuthor={scope === "team"} />
         ))}
       </section>
     </div>
+  );
+}
+
+function SnippetCard({ snippet, showAuthor }: { snippet: Snippet; showAuthor: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  // Show the toggle only when the content is long enough to be clipped.
+  const clipped = snippet.content.length > 160 || snippet.content.split("\n").length > 4;
+
+  return (
+    <Card className="space-y-1">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-mono text-text-secondary">
+          {snippet.date}
+          {showAuthor && snippet.author ? ` · ${snippet.author.name}` : ""}
+        </div>
+        {snippet.condition_score !== null && (
+          <span className="text-xs font-mono text-text-secondary">컨디션 {snippet.condition_score}/10</span>
+        )}
+      </div>
+      <p
+        className={clsx(
+          "text-sm text-text-primary whitespace-pre-wrap",
+          !expanded && clipped && "line-clamp-4"
+        )}
+      >
+        {snippet.content}
+      </p>
+      {clipped && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-accent hover:underline"
+        >
+          {expanded ? "접기" : "더보기"}
+        </button>
+      )}
+    </Card>
   );
 }

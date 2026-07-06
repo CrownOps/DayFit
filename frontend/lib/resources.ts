@@ -30,7 +30,7 @@ export const calendarApi = {
 // ---- Habits ----
 export const habitsApi = {
   list: () => api<Habit[]>("/api/habits"),
-  create: (body: { name: string; repeat_days: string; target_time: string }) =>
+  create: (body: { name: string; category: string; repeat_days: string; target_time: string }) =>
     api<Habit>("/api/habits", { method: "POST", body }),
   update: (id: number, body: Partial<Habit>) =>
     api<Habit>(`/api/habits/${id}`, { method: "PATCH", body }),

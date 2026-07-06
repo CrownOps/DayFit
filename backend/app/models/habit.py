@@ -13,6 +13,8 @@ class Habit(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
     name: Mapped[str] = mapped_column(String(255))
+    # free-form grouping label, e.g. "건강", "학습"; empty = uncategorised
+    category: Mapped[str] = mapped_column(String(64), default="")
     # comma-separated weekday numbers 0=Mon..6=Sun, empty string = every day
     repeat_days: Mapped[str] = mapped_column(String(32), default="")
     target_time: Mapped[time] = mapped_column(Time)

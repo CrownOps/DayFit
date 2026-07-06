@@ -96,11 +96,11 @@ export function HabitsWidget() {
   const pct = data && data.total > 0 ? (data.done / data.total) * 100 : 0;
 
   return (
-    <WidgetShell title="오늘 습관" href="/habits">
+    <WidgetShell title="오늘 데일리 루틴" href="/habits">
       {data === null ? (
         <Spinner className="h-5 w-5" />
       ) : data.total === 0 ? (
-        <p className="text-sm text-text-tertiary">오늘 예정된 습관이 없습니다.</p>
+        <p className="text-sm text-text-tertiary">오늘 예정된 데일리 루틴이 없습니다.</p>
       ) : (
         <>
           <div className="flex items-center justify-between text-sm">
