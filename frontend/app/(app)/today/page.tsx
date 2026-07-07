@@ -40,6 +40,24 @@ export default function TodayPage() {
   const weekStart = startOfWeek(date);
   const weekEnd = addDays(weekStart, 6);
 
+  // Whether the current view (day/week/month) includes today, and a label for
+  // the period being viewed — used by the date-nav "오늘" button so it reflects
+  // the selected date instead of always reading "오늘".
+  const now = new Date();
+  const todayIso = isoDate(now);
+  const isOnToday =
+    viewMode === "day"
+      ? day === todayIso
+      : viewMode === "week"
+        ? todayIso >= isoDate(weekStart) && todayIso <= isoDate(weekEnd)
+        : date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  const periodLabel =
+    viewMode === "month"
+      ? `${date.getFullYear()}년 ${date.getMonth() + 1}월`
+      : viewMode === "week"
+        ? `${weekStart.getMonth() + 1}월 ${weekStart.getDate()}일 주`
+        : koreanDate(date);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -143,8 +161,12 @@ export default function TodayPage() {
             >
               ‹
             </Button>
-            <Button variant="ghost" onClick={() => setDate(startOfDay(new Date()))}>
-              오늘
+            <Button
+              variant="ghost"
+              onClick={() => setDate(startOfDay(new Date()))}
+              title="오늘로 이동"
+            >
+              {isOnToday ? "오늘" : periodLabel}
             </Button>
             <Button
               variant="ghost"
