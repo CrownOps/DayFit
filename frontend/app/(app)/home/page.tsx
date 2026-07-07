@@ -9,6 +9,7 @@ import {
   SnippetWidget,
   TeamConditionWidget,
   TokenWidget,
+  VisionWidget,
 } from "@/components/DashboardWidgets";
 
 export default function HomePage() {
@@ -25,6 +26,9 @@ export default function HomePage() {
         </h1>
         <p className="text-sm text-text-secondary">{koreanDate(now)}</p>
       </div>
+
+      {/* Team vision & mission — the north star, pinned at the top */}
+      <VisionWidget />
 
       {/* Tasks — the pinned focus of the home screen */}
       <section className="grid gap-4 md:grid-cols-2">

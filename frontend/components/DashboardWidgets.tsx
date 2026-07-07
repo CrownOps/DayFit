@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { calendarApi, habitsApi, snippetsApi, teamApi, tokenApi } from "@/lib/resources";
-import type { CalendarEvent } from "@/lib/types";
+import { calendarApi, habitsApi, snippetsApi, teamApi, teamSpaceApi, tokenApi } from "@/lib/resources";
+import type { CalendarEvent, TeamProfile } from "@/lib/types";
 import { addDays, endOfDay, hhmm, isoDate, startOfDay } from "@/lib/dates";
 import { Card, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
@@ -154,6 +154,49 @@ export function SnippetWidget() {
           <span className="font-mono text-text-secondary">{state.latest.date}</span>
           {state.latest.score !== null && (
             <span className="font-mono text-text-secondary">· AI 점수 {state.latest.score}/100</span>
+          )}
+        </div>
+      )}
+    </WidgetShell>
+  );
+}
+
+/** Team vision & mission. */
+export function VisionWidget() {
+  const [profile, setProfile] = useState<TeamProfile | null | undefined>(undefined);
+
+  useEffect(() => {
+    teamSpaceApi
+      .profile()
+      .then(setProfile)
+      .catch(() => setProfile(null));
+  }, []);
+
+  const hasContent = !!(profile && (profile.vision || profile.mission));
+
+  return (
+    <WidgetShell title="팀 비전 · 미션" href="/team-space">
+      {profile === undefined ? (
+        <Spinner className="h-5 w-5" />
+      ) : !hasContent ? (
+        <p className="text-sm text-text-tertiary">아직 등록된 비전/미션이 없습니다.</p>
+      ) : (
+        <div className="space-y-2">
+          {profile!.vision && (
+            <div>
+              <div className="text-xs font-medium text-accent">🌱 비전</div>
+              <p className="text-sm text-text-primary whitespace-pre-wrap break-words line-clamp-3">
+                {profile!.vision}
+              </p>
+            </div>
+          )}
+          {profile!.mission && (
+            <div>
+              <div className="text-xs font-medium text-accent-secondary">🎯 미션</div>
+              <p className="text-sm text-text-primary whitespace-pre-wrap break-words line-clamp-3">
+                {profile!.mission}
+              </p>
+            </div>
           )}
         </div>
       )}

@@ -17,8 +17,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/today", label: "일정", icon: "◷" },
   { href: "/tasks", label: "할일", icon: "☑" },
   { href: "/habits", label: "데일리 루틴", icon: "✓" },
+  { href: "/reading", label: "독서", icon: "❑" },
   { href: "/snippets", label: "스니펫", icon: "▦" },
   { href: "/team", label: "헬스체크", icon: "◍" },
+  { href: "/team-space", label: "팀룰", icon: "⚑" },
   { href: "/tokens", label: "토큰", icon: "∑" },
   { href: "/admin", label: "관리자", icon: "★", adminOnly: true },
   { href: "/settings", label: "설정", icon: "⚙" },
@@ -36,7 +38,7 @@ export function SidebarNav() {
   return (
     <nav className="flex flex-col gap-1">
       {items.map((item) => {
-        const active = pathname.startsWith(item.href);
+        const active = pathname === item.href || pathname.startsWith(item.href + "/");
         return (
           <Link
             key={item.href}
@@ -64,7 +66,7 @@ export function BottomNav() {
   return (
     <nav className="fixed bottom-0 inset-x-0 z-20 flex border-t border-border bg-surface md:hidden pb-[env(safe-area-inset-bottom)]">
       {items.map((item) => {
-        const active = pathname.startsWith(item.href);
+        const active = pathname === item.href || pathname.startsWith(item.href + "/");
         return (
           <Link
             key={item.href}

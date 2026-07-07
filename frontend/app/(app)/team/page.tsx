@@ -24,15 +24,15 @@ function textColor(score: number | null): string {
 }
 
 const PERIODS = [
-  { key: 7, label: "1주" },
-  { key: 14, label: "2주" },
-  { key: 30, label: "1개월" },
+  { key: 7, label: "1주일" },
+  { key: 30, label: "1달" },
+  { key: 90, label: "3개월" },
 ] as const;
 
 export default function TeamPage() {
   const [health, setHealth] = useState<TeamHealthEntry[]>([]);
   const [teamSnippets, setTeamSnippets] = useState<Snippet[]>([]);
-  const [days, setDays] = useState<number>(14);
+  const [days, setDays] = useState<number>(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

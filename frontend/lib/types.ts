@@ -132,3 +132,38 @@ export interface Task {
   completed: boolean;
   sort_order: number;
 }
+
+export type BookStatus = "want" | "reading" | "done";
+export type BookScope = "own" | "team";
+
+export interface Book {
+  id: number;
+  title: string;
+  author: string;
+  status: BookStatus;
+  rating: number | null;
+  review: string;
+  owner: { id: number; name: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamProfile {
+  team_id: string;
+  vision: string;
+  mission: string;
+}
+
+export interface TeamRule {
+  id: number;
+  content: string;
+  sort_order: number;
+}
+
+export interface BookInput {
+  title: string;
+  author?: string;
+  status?: BookStatus;
+  rating?: number | null;
+  review?: string;
+}
