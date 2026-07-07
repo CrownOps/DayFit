@@ -1,7 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from googleapiclient.errors import HttpError
 
 from app.api import (
     auth,
@@ -19,6 +22,8 @@ from app.api import (
 from app.core.config import settings
 from app.services.notification_scheduler import start_scheduler, stop_scheduler
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +33,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DayFit API", lifespan=lifespan)
+
+
+@app.exception_handler(HttpError)
+async def google_http_error_handler(request: Request, exc: HttpError):
+    """Translate errors from the Google API client into clean HTTP responses.
+
+    An unhandled ``HttpError`` bubbles up to Starlette's ServerErrorMiddleware,
+    which returns a bare 500 that never passes back through CORSMiddleware — so
+    the browser sees a misleading "No Access-Control-Allow-Origin" CORS error
+    instead of the real failure. Handling it here means the response flows back
+    out through the CORS middleware and carries the proper headers.
+    """
+    status = getattr(exc.resp, "status", None) or 502
+    # A 4xx from Google means the request we sent was bad (e.g. an empty time
+    # range); surface it as a 400. Anything else is an upstream failure (502).
+    code = 400 if 400 <= status < 500 else 502
+    logger.warning("Google API error on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=code, content={"detail": f"Google Calendar 오류: {exc.reason}"})
 
 app.add_middleware(
     CORSMiddleware,
