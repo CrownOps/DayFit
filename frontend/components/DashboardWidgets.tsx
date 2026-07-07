@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { calendarApi, habitsApi, snippetsApi, teamApi, tokenApi } from "@/lib/resources";
 import type { CalendarEvent } from "@/lib/types";
-import { endOfDay, hhmm, isoDate, startOfDay } from "@/lib/dates";
+import { addDays, endOfDay, hhmm, isoDate, startOfDay } from "@/lib/dates";
 import { Card, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 
@@ -96,7 +96,7 @@ export function HabitsWidget() {
   const pct = data && data.total > 0 ? (data.done / data.total) * 100 : 0;
 
   return (
-    <WidgetShell title="오늘 데일리 루틴" href="/habits">
+    <WidgetShell title="데일리 루틴" href="/habits">
       {data === null ? (
         <Spinner className="h-5 w-5" />
       ) : data.total === 0 ? (
@@ -118,34 +118,44 @@ export function HabitsWidget() {
   );
 }
 
-/** Whether today's snippet is written + latest condition. */
+/** Most recent snippet + its AI grading score. */
 export function SnippetWidget() {
-  const [state, setState] = useState<{ written: boolean; score: number | null } | null>(null);
+  const [state, setState] = useState<
+    { latest: { date: string; score: number | null } | null } | null
+  >(null);
 
   useEffect(() => {
-    const today = isoDate(new Date());
+    const to = isoDate(new Date());
+    const from = isoDate(addDays(new Date(), -140));
     snippetsApi
-      .list("own", today, today)
+      .list("own", from, to)
       .then((list) => {
-        const t = list.find((s) => s.date === today);
-        setState({ written: !!t, score: t?.condition_score ?? null });
+        // Most recent record by date (list order isn't guaranteed).
+        const latest = list.reduce<(typeof list)[number] | null>(
+          (acc, s) => (acc === null || s.date > acc.date ? s : acc),
+          null
+        );
+        setState({
+          latest: latest ? { date: latest.date, score: latest.ai_score } : null,
+        });
       })
       .catch(() => setState(null));
   }, []);
 
   return (
-    <WidgetShell title="오늘 스니펫" href="/snippets">
+    <WidgetShell title="스니펫" href="/snippets">
       {state === null ? (
         <p className="text-sm text-text-tertiary">GCS Pulse 연동이 필요합니다.</p>
-      ) : state.written ? (
+      ) : state.latest === null ? (
+        <p className="text-sm text-warning">작성된 스니펫이 없어요.</p>
+      ) : (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-success">✓ 작성 완료</span>
-          {state.score !== null && (
-            <span className="font-mono text-text-secondary">· 컨디션 {state.score}/10</span>
+          <span className="text-success">✓ 최근 기록</span>
+          <span className="font-mono text-text-secondary">{state.latest.date}</span>
+          {state.latest.score !== null && (
+            <span className="font-mono text-text-secondary">· AI 점수 {state.latest.score}/100</span>
           )}
         </div>
-      ) : (
-        <p className="text-sm text-warning">아직 작성 전이에요.</p>
       )}
     </WidgetShell>
   );

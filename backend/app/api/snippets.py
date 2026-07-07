@@ -10,7 +10,7 @@ from app.models.user import User
 from app.schemas.snippet import HeatmapDay, SnippetAuthor, SnippetOut, SnippetCreate, SnippetUpdate, TeamHealthEntry
 from app.services import gcs_pulse_client as gcs
 from app.services.gcs_pulse_client import GcsPulseError
-from app.services.snippet_parser import extract_condition_score
+from app.services.snippet_parser import extract_ai_score, extract_condition_score
 
 router = APIRouter(tags=["snippets"])
 
@@ -26,6 +26,7 @@ def _to_snippet_out(item: dict) -> SnippetOut:
         date=item["date"],
         content=item["content"],
         condition_score=extract_condition_score(item["content"]),
+        ai_score=extract_ai_score(item.get("feedback")),
         created_at=item["created_at"],
         updated_at=item["updated_at"],
     )

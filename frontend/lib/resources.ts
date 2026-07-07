@@ -38,6 +38,8 @@ export const habitsApi = {
   setCompletion: (id: number, date: string, completed: boolean) =>
     api<HabitLog>(`/api/habits/${id}/logs/${date}`, { method: "POST", query: { completed } }),
   logs: (date: string) => api<HabitLog[]>("/api/habits/logs", { query: { date } }),
+  logsRange: (from: string, to: string) =>
+    api<HabitLog[]>("/api/habits/logs/range", { query: { from_date: from, to_date: to } }),
   missed: (date: string) => api<Habit[]>("/api/habits/missed", { query: { date } }),
   stats: (id: number, year: number, month: number) =>
     api<HabitStats>(`/api/habits/${id}/stats`, { query: { year, month } }),

@@ -24,6 +24,7 @@ class SnippetOut(BaseModel):
     date: date
     content: str
     condition_score: int | None = None
+    ai_score: int | None = None
     created_at: datetime
     updated_at: datetime
 

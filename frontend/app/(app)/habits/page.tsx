@@ -1,17 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { habitsApi } from "@/lib/resources";
 import type { Habit, HabitLog, HabitStats } from "@/lib/types";
-import { isoDate, timeLabel, WEEKDAY_LABELS } from "@/lib/dates";
+import { addDays, isoDate, timeLabel, WEEKDAY_LABELS } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
 import { Modal } from "@/components/Modal";
+import { Heatmap, type HeatCell } from "@/components/Heatmap";
 import { clsx } from "@/lib/clsx";
+
+/** Whether a habit is scheduled on a given weekday (0=Mon..6=Sun). */
+function scheduledOn(habit: Habit, weekday: number): boolean {
+  if (!habit.active) return false;
+  if (!habit.repeat_days) return true; // no repeat_days => every day
+  return habit.repeat_days.split(",").filter(Boolean).map(Number).includes(weekday);
+}
 
 export default function HabitsPage() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<Record<number, HabitLog>>({});
+  const [rangeLogs, setRangeLogs] = useState<HabitLog[]>([]);
   const [stats, setStats] = useState<Record<number, HabitStats>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +35,15 @@ export default function HabitsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [hs, ls] = await Promise.all([habitsApi.list(), habitsApi.logs(today)]);
+      const rangeFrom = isoDate(addDays(new Date(), -118));
+      const [hs, ls, rl] = await Promise.all([
+        habitsApi.list(),
+        habitsApi.logs(today),
+        habitsApi.logsRange(rangeFrom, today),
+      ]);
       setHabits(hs);
       setLogs(Object.fromEntries(ls.map((l) => [l.habit_id, l])));
+      setRangeLogs(rl);
       const statEntries = await Promise.all(
         hs.map((h) => habitsApi.stats(h.id, now.getFullYear(), now.getMonth() + 1))
       );
@@ -65,6 +80,35 @@ export default function HabitsPage() {
       setError(err instanceof ApiError ? err.message : "삭제에 실패했습니다");
     }
   }
+
+  // Completion heatmap: darker = more of the day's scheduled routines done.
+  const heatData = useMemo(() => {
+    const completedByDate = new Map<string, Set<number>>();
+    for (const l of rangeLogs) {
+      if (!l.completed) continue;
+      const set = completedByDate.get(l.date) ?? new Set<number>();
+      set.add(l.habit_id);
+      completedByDate.set(l.date, set);
+    }
+
+    const map: Record<string, HeatCell> = {};
+    const start = addDays(new Date(), -118);
+    for (let i = 0; i <= 118; i++) {
+      const d = addDays(start, i);
+      const iso = isoDate(d);
+      const weekday = (d.getDay() + 6) % 7;
+      const scheduled = habits.filter((h) => scheduledOn(h, weekday)).length;
+      const completed = completedByDate.get(iso)?.size ?? 0;
+
+      const denom = scheduled > 0 ? scheduled : completed;
+      const ratio = denom > 0 ? Math.min(1, completed / denom) : 0;
+      const level: HeatCell["level"] =
+        completed === 0 ? 0 : ratio >= 1 ? 4 : ratio >= 0.66 ? 3 : ratio >= 0.33 ? 2 : 1;
+
+      map[iso] = { level, title: `${iso} · ${completed}/${scheduled || completed} 완료` };
+    }
+    return map;
+  }, [rangeLogs, habits]);
 
   const categories = Array.from(
     new Set(habits.map((h) => h.category).filter(Boolean))
@@ -114,6 +158,32 @@ export default function HabitsPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {/* Completion heatmap */}
+      {!loading && habits.length > 0 && (
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-primary">루틴 잔디</h2>
+            <div className="flex items-center gap-1 text-xs text-text-tertiary">
+              <span>적음</span>
+              {[1, 2, 3, 4].map((l) => (
+                <span
+                  key={l}
+                  className={clsx(
+                    "h-3 w-3 rounded-sm inline-block",
+                    ["bg-accent/25", "bg-accent/45", "bg-accent/70", "bg-accent"][l - 1]
+                  )}
+                />
+              ))}
+              <span>많음</span>
+            </div>
+          </div>
+          <Heatmap data={heatData} />
+          <p className="text-xs text-text-tertiary">
+            매일 반복하며 그날 예정된 루틴을 많이 달성할수록 칸이 진해집니다.
+          </p>
+        </Card>
       )}
 
       {loading ? (

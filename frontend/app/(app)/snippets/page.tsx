@@ -6,7 +6,7 @@ import type { Snippet } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, Spinner, Textarea } from "@/components/ui";
-import { Heatmap, conditionLevel, type HeatCell } from "@/components/Heatmap";
+import { Heatmap, aiScoreLevel, type HeatCell } from "@/components/Heatmap";
 import { clsx } from "@/lib/clsx";
 import { SNIPPET_TEMPLATE } from "@/lib/snippetTemplate";
 
@@ -56,15 +56,49 @@ export default function SnippetsPage() {
 
   const heatData = useMemo(() => {
     const map: Record<string, HeatCell> = {};
+
+    // Own scope: a single author — intensity is the AI grading score (0–100).
+    if (scope === "own") {
+      for (const s of snippets) {
+        const level = aiScoreLevel(s.ai_score);
+        const existing = map[s.date];
+        const title = `${s.date}${s.ai_score !== null ? ` · AI 점수 ${s.ai_score}/100` : " · 채점 전"}`;
+        if (!existing || level > existing.level) map[s.date] = { level, title };
+      }
+      return map;
+    }
+
+    // Team scope: intensity reflects BOTH participation (how many members
+    // submitted that day) and their AI grading scores. Darkest = everyone
+    // submitted AND scores are high. Participation is the dominant factor so
+    // a single high score can't darken a low-turnout day.
+    const teamSize =
+      new Set(snippets.map((s) => s.author?.id).filter((id): id is number => id != null)).size || 1;
+
+    const byDate = new Map<string, Snippet[]>();
     for (const s of snippets) {
-      // Intensity is driven by the condition score. In team scope multiple
-      // members may share a date; keep the highest-scoring one.
-      const level = conditionLevel(s.condition_score);
-      const existing = map[s.date];
-      const title = `${s.date}${s.condition_score !== null ? ` · 컨디션 ${s.condition_score}/10` : ""}${
-        scope === "team" && s.author ? ` · ${s.author.name}` : ""
-      }`;
-      if (!existing || level > existing.level) map[s.date] = { level, title };
+      const arr = byDate.get(s.date) ?? [];
+      arr.push(s);
+      byDate.set(s.date, arr);
+    }
+
+    for (const [d, items] of byDate) {
+      const submitters =
+        new Set(items.map((s) => s.author?.id).filter((id): id is number => id != null)).size ||
+        items.length;
+      const participation = Math.min(1, submitters / teamSize);
+
+      const scores = items.map((s) => s.ai_score).filter((v): v is number => v !== null);
+      const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+      // Not-yet-scored days are neutral (0.5) so participation still shows through.
+      const scoreFactor = avgScore !== null ? avgScore / 100 : 0.5;
+
+      const combined = participation * (0.5 + 0.5 * scoreFactor);
+      const level: HeatCell["level"] =
+        combined >= 0.75 ? 4 : combined >= 0.5 ? 3 : combined >= 0.25 ? 2 : 1;
+
+      const scoreLabel = avgScore !== null ? ` · 평균 AI 점수 ${Math.round(avgScore)}/100` : "";
+      map[d] = { level, title: `${d} · ${submitters}/${teamSize}명 제출${scoreLabel}` };
     }
     return map;
   }, [snippets, scope]);
@@ -153,7 +187,7 @@ export default function SnippetsPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             className="font-mono text-xs leading-relaxed"
-            placeholder="오늘 한 일, 블로커, 컨디션 등을 자유롭게 기록하세요. 컨디션은 '#### 헬스 체크 (10점)' 뒤에 'N/10' 형식으로 적으면 잔디 색에 반영됩니다."
+            placeholder="오늘 한 일, 블로커, 배운 점 등을 자유롭게 기록하세요. 기록을 저장하면 AI가 채점한 점수(0~100)가 잔디 색에 반영됩니다."
           />
           <div className="flex justify-end">
             <Button onClick={saveDraft} disabled={saving || !draft.trim()}>
@@ -170,7 +204,7 @@ export default function SnippetsPage() {
             {scope === "own" ? "내 잔디" : "팀 잔디"}
           </h2>
           <div className="flex items-center gap-1 text-xs text-text-tertiary">
-            <span>컨디션 낮음</span>
+            <span>{scope === "own" ? "AI 점수 낮음" : "참여·AI 점수 낮음"}</span>
             {[1, 2, 3, 4].map((l) => (
               <span
                 key={l}
@@ -263,8 +297,8 @@ function SnippetCard({ snippet, showAuthor }: { snippet: Snippet; showAuthor: bo
           {snippet.date}
           {showAuthor && snippet.author ? ` · ${snippet.author.name}` : ""}
         </div>
-        {snippet.condition_score !== null && (
-          <span className="text-xs font-mono text-text-secondary">컨디션 {snippet.condition_score}/10</span>
+        {snippet.ai_score !== null && (
+          <span className="text-xs font-mono text-text-secondary">AI 점수 {snippet.ai_score}/100</span>
         )}
       </div>
       <p

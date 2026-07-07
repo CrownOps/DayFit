@@ -76,6 +76,29 @@ def list_logs(
     return db.query(HabitLog).filter(HabitLog.habit_id.in_(habit_ids), HabitLog.date == date_).all()
 
 
+@router.get("/logs/range", response_model=list[HabitLogOut])
+def list_logs_range(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """All habit logs for the user within [from_date, to_date] — powers the
+    completion heatmap on the 데일리 루틴 page."""
+    habit_ids = [h.id for h in db.query(Habit).filter(Habit.user_id == user.id).all()]
+    if not habit_ids:
+        return []
+    return (
+        db.query(HabitLog)
+        .filter(
+            HabitLog.habit_id.in_(habit_ids),
+            HabitLog.date >= from_date,
+            HabitLog.date <= to_date,
+        )
+        .all()
+    )
+
+
 @router.get("/missed", response_model=list[HabitOut])
 def missed_habits(
     date_: date = Query(alias="date"),

@@ -14,11 +14,11 @@ interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/home", label: "홈", icon: "⌂" },
-  { href: "/today", label: "오늘", icon: "◷" },
+  { href: "/today", label: "일정", icon: "◷" },
   { href: "/tasks", label: "할일", icon: "☑" },
   { href: "/habits", label: "데일리 루틴", icon: "✓" },
   { href: "/snippets", label: "스니펫", icon: "▦" },
-  { href: "/team", label: "팀", icon: "◍" },
+  { href: "/team", label: "헬스체크", icon: "◍" },
   { href: "/tokens", label: "토큰", icon: "∑" },
   { href: "/admin", label: "관리자", icon: "★", adminOnly: true },
   { href: "/settings", label: "설정", icon: "⚙" },
