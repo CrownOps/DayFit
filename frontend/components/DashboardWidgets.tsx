@@ -184,7 +184,7 @@ export function VisionWidget() {
         <div className="space-y-2">
           {profile!.vision && (
             <div>
-              <div className="text-xs font-medium text-accent">🌱 비전</div>
+              <div className="text-xs font-medium text-accent">비전</div>
               <p className="text-sm text-text-primary whitespace-pre-wrap break-words line-clamp-3">
                 {profile!.vision}
               </p>
@@ -192,7 +192,7 @@ export function VisionWidget() {
           )}
           {profile!.mission && (
             <div>
-              <div className="text-xs font-medium text-accent-secondary">🎯 미션</div>
+              <div className="text-xs font-medium text-accent-secondary">미션</div>
               <p className="text-sm text-text-primary whitespace-pre-wrap break-words line-clamp-3">
                 {profile!.mission}
               </p>

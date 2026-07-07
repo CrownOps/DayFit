@@ -63,10 +63,7 @@ export default function TeamSpacePage() {
       {/* Vision & mission */}
       <section className="grid gap-4 sm:grid-cols-2">
         <Card className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🌱</span>
-            <h2 className="text-sm font-semibold text-text-primary">비전</h2>
-          </div>
+          <h2 className="text-sm font-semibold text-text-primary">비전</h2>
           {profile?.vision ? (
             <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{profile.vision}</p>
           ) : (
@@ -76,10 +73,7 @@ export default function TeamSpacePage() {
           )}
         </Card>
         <Card className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🎯</span>
-            <h2 className="text-sm font-semibold text-text-primary">미션</h2>
-          </div>
+          <h2 className="text-sm font-semibold text-text-primary">미션</h2>
           {profile?.mission ? (
             <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{profile.mission}</p>
           ) : (
