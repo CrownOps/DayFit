@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,18 @@ class Settings(BaseSettings):
     admin_invite_bootstrap_email: str = ""
 
     database_url: str
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _use_psycopg_driver(cls, v: str) -> str:
+        # Managed Postgres providers (Railway, Heroku, …) hand out URLs with a
+        # bare `postgresql://` (or legacy `postgres://`) scheme, which SQLAlchemy
+        # resolves to psycopg2. We ship psycopg 3, so force the `+psycopg` driver.
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            v = "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     google_client_id: str = ""
     google_client_secret: str = ""
