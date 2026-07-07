@@ -1,16 +1,30 @@
-from dataclasses import dataclass
-from datetime import datetime, timezone
+import logging
+import os
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from sqlalchemy.orm import Session
+# Google may return more scopes than we requested (e.g. because
+# ``include_granted_scopes`` pulls in scopes the user previously granted to this
+# OAuth client, such as gmail.send). By default oauthlib raises a ``Warning``
+# exception from ``fetch_token`` when the granted scope set differs from what we
+# asked for, which surfaces as a 500 on the OAuth callback. Relaxing this makes
+# the mismatch a logged warning instead of a hard failure. Must be set before
+# oauthlib validates the token response.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
-from app.core.config import settings
-from app.core.security import decrypt_secret, encrypt_secret
-from app.models.integration import IntegrationSettings
-from app.models.user import User
+from dataclasses import dataclass  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from google.auth.transport.requests import Request  # noqa: E402
+from google.oauth2.credentials import Credentials  # noqa: E402
+from google_auth_oauthlib.flow import Flow  # noqa: E402
+from googleapiclient.discovery import build  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
+
+from app.core.config import settings  # noqa: E402
+from app.core.security import decrypt_secret, encrypt_secret  # noqa: E402
+from app.models.integration import IntegrationSettings  # noqa: E402
+from app.models.user import User  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -95,7 +109,13 @@ def exchange_code_for_tokens(
         raise GoogleNotConfiguredError()
     flow = build_flow(config, state=state)
     flow.fetch_token(code=code)
-    return int(state), flow.credentials
+    creds = flow.credentials
+    if not creds.refresh_token:
+        # Without a refresh token we cannot renew access later. This usually
+        # means the user had already granted consent (Google only returns a
+        # refresh token on first consent unless prompt=consent is forced).
+        logger.warning("Google token exchange returned no refresh token for state=%s", state)
+    return int(state), creds
 
 
 def save_credentials(db: Session, user: User, creds: Credentials) -> None:

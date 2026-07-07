@@ -162,6 +162,8 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
     const params = new URLSearchParams(window.location.search);
     if (params.get("calendar") === "not_configured") {
       setError("Google 연동이 아직 설정되지 않았습니다. 관리자가 아래에서 값을 입력해야 합니다.");
+    } else if (params.get("calendar") === "error") {
+      setError("Google Calendar 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }, []);
 

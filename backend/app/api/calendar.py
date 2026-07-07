@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,6 +12,8 @@ from app.models.calendar import CalendarEventCache
 from app.models.user import User
 from app.schemas.calendar import EventCreate, EventOut, EventUpdate, GoogleAuthUrlOut
 from app.services import google_calendar as gcal
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -37,18 +40,45 @@ def authorize(request: Request, user: User = Depends(get_current_user), db: Sess
 
 
 @router.get("/oauth/callback")
-def oauth_callback(request: Request, code: str, state: str, db: Session = Depends(get_db)):
+def oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    if error or not code or not state:
+        # User denied consent, or Google redirected without an auth code.
+        logger.info("Google OAuth callback without code (error=%s, state=%s)", error, state)
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
+
     try:
         user_id, creds = gcal.exchange_code_for_tokens(db, code, state, _callback_url(request))
     except gcal.GoogleNotConfiguredError:
         return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=not_configured")
+    except Exception:
+        # Any failure exchanging the code (invalid/expired code, redirect_uri
+        # mismatch, network error to Google's token endpoint, etc.) should send
+        # the user back to settings with an error rather than a bare 500.
+        logger.exception("Google OAuth token exchange failed for state=%s", state)
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
 
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    gcal.save_credentials(db, user, creds)
-    gcal.disable_reminders_for_all_events(user, db)
+    try:
+        gcal.save_credentials(db, user, creds)
+    except Exception:
+        logger.exception("Failed to save Google credentials for user_id=%s", user_id)
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
+
+    try:
+        gcal.disable_reminders_for_all_events(user, db)
+    except Exception:
+        # Reminder cleanup is best-effort; credentials are already saved, so the
+        # connection succeeded even if this step fails.
+        logger.exception("Failed to disable existing reminders for user_id=%s", user_id)
 
     return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=connected")
 
