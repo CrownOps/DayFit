@@ -42,8 +42,11 @@ railway add --database postgres
 - 배포 후 공개 도메인 생성. 예: `https://dayfit-web.up.railway.app`
 
 ### 4. 상호 참조 마무리
-- 백엔드 `CORS_ORIGINS` = 프론트 도메인 (`https://dayfit-web.up.railway.app`)
-- 백엔드 `FRONTEND_URL` = 프론트 도메인
+- 백엔드 `FRONTEND_URL` = 프론트 도메인 (예: `https://dayfit-web-production.up.railway.app`)
+  → 이 값은 OAuth 리다이렉트에도 쓰이며, **CORS 허용 origin에 자동 포함**됩니다.
+  실제 배포된 프론트 URL과 정확히 일치해야 합니다(끝에 슬래시 없이).
+- 백엔드 `CORS_ORIGINS` = (선택) 프론트 외에 추가로 허용할 origin이 있을 때만 콤마로 나열.
+  없으면 비워둬도 `FRONTEND_URL`만으로 동작합니다.
 - (구글 캘린더 쓰면) `GOOGLE_REDIRECT_URI` = `<백엔드도메인>/api/calendar/oauth/callback`
   → 이 URL을 Google Cloud Console OAuth 승인 리디렉션 URI에도 등록.
 - 값 변경 후 백엔드 재배포.
@@ -64,8 +67,8 @@ railway run --service dayfit-api python scripts/seed_admin.py <email> <password>
 | `DATABASE_URL` | `postgresql+psycopg://...` (Railway Postgres) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | 로컬 `.env` 값 재사용 또는 `web-push generate-vapid-keys` |
 | `VAPID_SUBJECT` | `mailto:eunji7480@gachon.ac.kr` |
-| `CORS_ORIGINS` | 프론트 도메인 |
-| `FRONTEND_URL` | 프론트 도메인 |
+| `FRONTEND_URL` | 프론트 도메인 (CORS origin에 자동 포함) |
+| `CORS_ORIGINS` | (선택) 프론트 외 추가 origin만 콤마로 나열 |
 | `GCS_PULSE_BASE_URL` | `https://api.1000.school` |
 | `GCS_PULSE_TEAM_ID` | `78I8M9OE` |
 | `GOOGLE_CLIENT_ID` / `SECRET` / `GOOGLE_REDIRECT_URI` | 캘린더 연동 시 |
