@@ -41,7 +41,15 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+        # The frontend URL (used for OAuth redirects) is always a trusted origin.
+        # Including it means setting FRONTEND_URL alone is enough for browser API
+        # calls, so CORS can't silently break when CORS_ORIGINS is unset or points
+        # at a stale domain.
+        frontend_origin = self.frontend_url.strip().rstrip("/")
+        if frontend_origin and frontend_origin not in origins:
+            origins.append(frontend_origin)
+        return origins
 
 
 settings = Settings()
