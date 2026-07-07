@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { calendarApi, habitsApi, snippetsApi, teamApi, teamSpaceApi, tokenApi } from "@/lib/resources";
-import type { CalendarEvent, TeamProfile } from "@/lib/types";
+import { booksApi, calendarApi, habitsApi, snippetsApi, teamApi, teamSpaceApi, tokenApi } from "@/lib/resources";
+import type { Book, CalendarEvent, TeamProfile, TeamRule } from "@/lib/types";
 import { addDays, endOfDay, hhmm, isoDate, startOfDay } from "@/lib/dates";
 import { Card, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
@@ -278,6 +278,99 @@ export function TokenWidget() {
             <div className={clsx("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
           </div>
         </>
+      )}
+    </WidgetShell>
+  );
+}
+
+const BOOK_STATUS_LABEL: Record<Book["status"], string> = {
+  reading: "진행 중",
+  want: "읽기 전",
+  done: "완료",
+};
+
+/** Reading list: currently-reading books + status counts. */
+export function ReadingWidget() {
+  const [books, setBooks] = useState<Book[] | null | undefined>(undefined);
+
+  useEffect(() => {
+    booksApi
+      .list("own")
+      .then(setBooks)
+      .catch(() => setBooks(null));
+  }, []);
+
+  const reading = (books ?? []).filter((b) => b.status === "reading");
+  const counts = {
+    reading: reading.length,
+    want: (books ?? []).filter((b) => b.status === "want").length,
+    done: (books ?? []).filter((b) => b.status === "done").length,
+  };
+
+  return (
+    <WidgetShell title="독서" href="/reading">
+      {books === undefined ? (
+        <Spinner className="h-5 w-5" />
+      ) : books === null ? (
+        <p className="text-sm text-text-tertiary">독서 기록을 불러올 수 없습니다.</p>
+      ) : books.length === 0 ? (
+        <p className="text-sm text-text-tertiary">아직 등록된 책이 없습니다.</p>
+      ) : (
+        <div className="space-y-2">
+          {reading.length > 0 ? (
+            <ul className="space-y-1">
+              {reading.slice(0, 3).map((b) => (
+                <li key={b.id} className="flex items-center gap-2 text-sm">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                  <span className="truncate text-text-primary">{b.title}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-text-tertiary">진행 중인 책이 없습니다.</p>
+          )}
+          <div className="flex items-center gap-3 text-xs text-text-secondary font-mono">
+            <span>{BOOK_STATUS_LABEL.reading} {counts.reading}</span>
+            <span>{BOOK_STATUS_LABEL.want} {counts.want}</span>
+            <span>{BOOK_STATUS_LABEL.done} {counts.done}</span>
+          </div>
+        </div>
+      )}
+    </WidgetShell>
+  );
+}
+
+/** Team ground rules — a glanceable list. */
+export function TeamRulesWidget() {
+  const [rules, setRules] = useState<TeamRule[] | null | undefined>(undefined);
+
+  useEffect(() => {
+    teamSpaceApi
+      .rules()
+      .then(setRules)
+      .catch(() => setRules(null));
+  }, []);
+
+  return (
+    <WidgetShell title="팀룰" href="/team-space">
+      {rules === undefined ? (
+        <Spinner className="h-5 w-5" />
+      ) : rules === null || rules.length === 0 ? (
+        <p className="text-sm text-text-tertiary">아직 등록된 팀룰이 없습니다.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rules.slice(0, 3).map((r, i) => (
+            <li key={r.id} className="flex items-start gap-2 text-sm">
+              <span className="mt-0.5 shrink-0 grid h-5 w-5 place-items-center rounded-full bg-accent/10 text-accent text-[11px] font-mono font-semibold">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-text-primary">{r.content}</span>
+            </li>
+          ))}
+          {rules.length > 3 && (
+            <li className="text-xs text-text-tertiary pl-7">외 {rules.length - 3}개</li>
+          )}
+        </ul>
       )}
     </WidgetShell>
   );

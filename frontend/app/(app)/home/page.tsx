@@ -5,9 +5,11 @@ import { koreanDate } from "@/lib/dates";
 import { TaskWidget } from "@/components/TaskWidget";
 import {
   HabitsWidget,
+  ReadingWidget,
   ScheduleWidget,
   SnippetWidget,
   TeamConditionWidget,
+  TeamRulesWidget,
   TokenWidget,
   VisionWidget,
 } from "@/components/DashboardWidgets";
@@ -40,8 +42,10 @@ export default function HomePage() {
       <section className="grid gap-4 sm:grid-cols-2">
         <ScheduleWidget />
         <HabitsWidget />
+        <ReadingWidget />
         <SnippetWidget />
         <TeamConditionWidget />
+        <TeamRulesWidget />
         <TokenWidget />
       </section>
     </div>
