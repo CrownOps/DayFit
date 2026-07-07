@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { snippetsApi, teamApi } from "@/lib/resources";
-import type { HeatCell } from "@/components/Heatmap";
 import type { Snippet, TeamHealthEntry } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Card, Spinner } from "@/components/ui";
-import { Heatmap, conditionLevel } from "@/components/Heatmap";
+import { ConditionTrend, type TrendPoint } from "@/components/ConditionTrend";
 import { clsx } from "@/lib/clsx";
 
 function barColor(score: number | null): string {
@@ -59,22 +58,37 @@ export default function TeamPage() {
     load();
   }, [load]);
 
-  const heatData: Record<string, HeatCell> = {};
-  for (const s of teamSnippets) {
-    // Intensity by condition score; keep the highest-scoring member per day.
-    const level = conditionLevel(s.condition_score);
-    const existing = heatData[s.date];
-    const title = `${s.date}${s.condition_score !== null ? ` · 컨디션 ${s.condition_score}/10` : ""}${
-      s.author ? ` · ${s.author.name}` : ""
-    }`;
-    if (!existing || level > existing.level) heatData[s.date] = { level, title };
-  }
+  // Per-member condition trend over the selected period, from team snippets.
+  const trendFromMs = addDays(new Date(), -days).setHours(0, 0, 0, 0);
+  const trendToMs = new Date().setHours(23, 59, 59, 999);
+  const trendByUser = useMemo(() => {
+    const map = new Map<number, TrendPoint[]>();
+    for (const s of teamSnippets) {
+      if (!s.author || s.condition_score === null) continue;
+      if (Date.parse(s.date) < trendFromMs) continue;
+      const arr = map.get(s.author.id) ?? [];
+      arr.push({ date: s.date, score: s.condition_score });
+      map.set(s.author.id, arr);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => (a.date < b.date ? -1 : 1));
+    return map;
+  }, [teamSnippets, trendFromMs]);
 
-  const scored = health.filter((m) => m.condition_score !== null);
+  // Each member's most recent *recorded* condition (latest trend point).
+  const latestScoreByUser = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const [uid, pts] of trendByUser) {
+      if (pts.length > 0) m.set(uid, pts[pts.length - 1].score);
+    }
+    return m;
+  }, [trendByUser]);
+
+  const scoredCount = latestScoreByUser.size;
   const avg = useMemo(() => {
-    if (scored.length === 0) return null;
-    return scored.reduce((a, m) => a + (m.condition_score ?? 0), 0) / scored.length;
-  }, [scored]);
+    if (latestScoreByUser.size === 0) return null;
+    const vals = [...latestScoreByUser.values()];
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [latestScoreByUser]);
 
   return (
     <div className="space-y-6">
@@ -125,14 +139,14 @@ export default function TeamPage() {
                 />
               </div>
               <p className="text-xs text-text-tertiary">
-                팀원 {health.length}명 중 {scored.length}명 헬스체크 기록됨
+                팀원 {health.length}명 중 {scoredCount}명 헬스체크 기록됨
               </p>
             </Card>
           )}
 
-          {/* Per-member progress bars */}
+          {/* Per-member condition: current score + trend over the period */}
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-text-primary">팀원별 컨디션</h2>
+            <h2 className="text-sm font-semibold text-text-primary">팀원별 컨디션 추이</h2>
             {health.length === 0 ? (
               <Card>
                 <p className="text-sm text-text-tertiary">
@@ -140,52 +154,66 @@ export default function TeamPage() {
                 </p>
               </Card>
             ) : (
-              <Card className="space-y-4">
+              <div className="grid grid-cols-1 gap-3">
+                {/* Single column: for each member, a progress-bar box followed by
+                    a condition-trend box (6 rows for 3 members). */}
                 {health.map((m) => {
-                  const score = m.condition_score;
+                  // Progress bar reflects the most recent *recorded* condition
+                  // (the latest point on the trend), not the latest snippet —
+                  // which often has no health-check score.
+                  const points = trendByUser.get(m.user_id) ?? [];
+                  const score = points.length > 0 ? points[points.length - 1].score : null;
                   const pct = score !== null ? (score / 10) * 100 : 0;
                   return (
-                    <div key={m.user_id} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
-                          {m.has_snippet_today ? (
-                            <span className="shrink-0 text-[10px] rounded-full bg-success/15 text-success px-1.5 py-0.5">
-                              오늘
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[10px] rounded-full bg-border text-text-tertiary px-1.5 py-0.5">
-                              {m.date ?? "기록 없음"}
-                            </span>
-                          )}
+                    <div key={m.user_id} className="contents">
+                      <Card className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
+                            {m.has_snippet_today ? (
+                              <span className="shrink-0 text-[10px] rounded-full bg-success/15 text-success px-1.5 py-0.5">
+                                오늘
+                              </span>
+                            ) : (
+                              <span className="shrink-0 text-[10px] rounded-full bg-border text-text-tertiary px-1.5 py-0.5">
+                                {m.date ?? "기록 없음"}
+                              </span>
+                            )}
+                          </div>
+                          <span className={clsx("text-sm font-mono font-semibold shrink-0", textColor(score))}>
+                            {score !== null ? `${score}/10` : "—"}
+                          </span>
                         </div>
-                        <span className={clsx("text-sm font-mono font-semibold shrink-0", textColor(score))}>
-                          {score !== null ? `${score}/10` : "—"}
-                        </span>
-                      </div>
-                      <div
-                        className="h-2 rounded-full bg-border overflow-hidden"
-                        role="progressbar"
-                        aria-valuenow={score ?? 0}
-                        aria-valuemin={0}
-                        aria-valuemax={10}
-                      >
                         <div
-                          className={clsx("h-full rounded-full transition-all", barColor(score))}
-                          style={{ width: `${pct}%` }}
+                          className="h-2 rounded-full bg-border overflow-hidden"
+                          role="progressbar"
+                          aria-valuenow={score ?? 0}
+                          aria-valuemin={0}
+                          aria-valuemax={10}
+                        >
+                          <div
+                            className={clsx("h-full rounded-full transition-all", barColor(score))}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </Card>
+
+                      <Card className="space-y-2">
+                        <div className="text-xs font-medium text-text-secondary truncate">
+                          {m.name} · 컨디션 추이
+                        </div>
+                        <ConditionTrend
+                          points={trendByUser.get(m.user_id) ?? []}
+                          fromMs={trendFromMs}
+                          toMs={trendToMs}
                         />
-                      </div>
+                      </Card>
                     </div>
                   );
                 })}
-              </Card>
+              </div>
             )}
           </section>
-
-          <Card className="space-y-3">
-            <h2 className="text-sm font-semibold text-text-primary">팀 잔디 (최근)</h2>
-            <Heatmap data={heatData} />
-          </Card>
         </>
       )}
     </div>

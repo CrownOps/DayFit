@@ -77,6 +77,7 @@ export interface Snippet {
   date: string;
   content: string;
   condition_score: number | null;
+  ai_score: number | null;
   created_at: string;
   updated_at: string;
 }

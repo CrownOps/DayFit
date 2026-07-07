@@ -21,6 +21,19 @@ export function conditionLevel(score: number | null): HeatCell["level"] {
   return 1;
 }
 
+/**
+ * Map an AI grading score (0–100, from a snippet's `feedback.total_score`) to a
+ * heat intensity level. Higher AI score = darker cell. A snippet that exists but
+ * hasn't been scored yet stays faint (1).
+ */
+export function aiScoreLevel(score: number | null): HeatCell["level"] {
+  if (score === null) return 1;
+  if (score >= 85) return 4;
+  if (score >= 70) return 3;
+  if (score >= 50) return 2;
+  return 1;
+}
+
 const LEVEL_CLASS = [
   "bg-border", // 0 — no entry
   "bg-accent/25",
