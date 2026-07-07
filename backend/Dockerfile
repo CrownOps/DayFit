@@ -24,4 +24,6 @@ ENV PORT=8000
 EXPOSE 8000
 
 # Run migrations then start the API. Single replica → APScheduler runs once.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# --proxy-headers so request.url is https behind Railway's TLS proxy (needed for
+# the Google OAuth callback URL derivation).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from google.auth.transport.requests import Request
@@ -8,31 +9,76 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import decrypt_secret, encrypt_secret
+from app.models.integration import IntegrationSettings
 from app.models.user import User
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
-def build_flow(state: str | None = None) -> Flow:
+class GoogleNotConfiguredError(Exception):
+    """Raised when the shared Google OAuth client has not been configured yet."""
+
+
+@dataclass
+class GoogleOAuthConfig:
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+
+
+def get_settings_row(db: Session) -> IntegrationSettings | None:
+    return db.get(IntegrationSettings, 1)
+
+
+def resolve_google_config(db: Session, request_redirect_uri: str | None = None) -> GoogleOAuthConfig | None:
+    """Effective Google OAuth config: DB row first, then env vars.
+
+    ``request_redirect_uri`` (derived from the incoming request) is used only as
+    a fallback when neither the stored value nor the env var is set. Returns
+    ``None`` when the client id/secret are missing (i.e. not configured).
+    """
+    row = get_settings_row(db)
+
+    client_id = (row.google_client_id if row and row.google_client_id else "") or settings.google_client_id
+    if row and row.google_client_secret_encrypted:
+        client_secret = decrypt_secret(row.google_client_secret_encrypted)
+    else:
+        client_secret = settings.google_client_secret
+
+    redirect_uri = (
+        (row.google_redirect_uri if row and row.google_redirect_uri else "")
+        or request_redirect_uri
+        or settings.google_redirect_uri
+    )
+
+    if not client_id or not client_secret:
+        return None
+    return GoogleOAuthConfig(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri or "")
+
+
+def build_flow(config: GoogleOAuthConfig, state: str | None = None) -> Flow:
     client_config = {
         "web": {
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret,
+            "client_id": config.client_id,
+            "client_secret": config.client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [settings.google_redirect_uri],
+            "redirect_uris": [config.redirect_uri],
         }
     }
     return Flow.from_client_config(
         client_config,
         scopes=SCOPES,
-        redirect_uri=settings.google_redirect_uri,
+        redirect_uri=config.redirect_uri,
         state=state,
     )
 
 
-def get_authorization_url(user_id: int) -> str:
-    flow = build_flow(state=str(user_id))
+def get_authorization_url(db: Session, user_id: int, request_redirect_uri: str | None = None) -> str:
+    config = resolve_google_config(db, request_redirect_uri)
+    if config is None or not config.redirect_uri:
+        raise GoogleNotConfiguredError()
+    flow = build_flow(config, state=str(user_id))
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -41,8 +87,13 @@ def get_authorization_url(user_id: int) -> str:
     return auth_url
 
 
-def exchange_code_for_tokens(code: str, state: str) -> tuple[int, Credentials]:
-    flow = build_flow(state=state)
+def exchange_code_for_tokens(
+    db: Session, code: str, state: str, request_redirect_uri: str | None = None
+) -> tuple[int, Credentials]:
+    config = resolve_google_config(db, request_redirect_uri)
+    if config is None or not config.redirect_uri:
+        raise GoogleNotConfiguredError()
+    flow = build_flow(config, state=state)
     flow.fetch_token(code=code)
     return int(state), flow.credentials
 
@@ -56,7 +107,7 @@ def save_credentials(db: Session, user: User, creds: Credentials) -> None:
     db.commit()
 
 
-def _load_credentials(user: User) -> Credentials:
+def _load_credentials(user: User, config: GoogleOAuthConfig) -> Credentials:
     if not user.google_refresh_token_encrypted:
         raise ValueError("User has not connected Google Calendar")
 
@@ -64,8 +115,8 @@ def _load_credentials(user: User) -> Credentials:
         token=decrypt_secret(user.google_oauth_token_encrypted) if user.google_oauth_token_encrypted else None,
         refresh_token=decrypt_secret(user.google_refresh_token_encrypted),
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
+        client_id=config.client_id,
+        client_secret=config.client_secret,
         scopes=SCOPES,
     )
     if not creds.valid:
@@ -74,7 +125,10 @@ def _load_credentials(user: User) -> Credentials:
 
 
 def get_calendar_service(user: User, db: Session):
-    creds = _load_credentials(user)
+    config = resolve_google_config(db)
+    if config is None:
+        raise GoogleNotConfiguredError()
+    creds = _load_credentials(user, config)
     if creds.token:
         user.google_oauth_token_encrypted = encrypt_secret(creds.token)
         db.add(user)

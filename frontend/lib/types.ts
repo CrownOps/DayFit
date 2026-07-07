@@ -14,6 +14,13 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface GoogleIntegration {
+  configured: boolean;
+  client_id: string | null;
+  redirect_uri: string | null;
+  suggested_callback_url: string;
+}
+
 export interface InviteCode {
   id: number;
   code: string;
