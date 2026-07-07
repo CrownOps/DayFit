@@ -1,6 +1,7 @@
 from app.models.book import Book
 from app.models.calendar import CalendarEventCache
 from app.models.habit import Habit, HabitLog
+from app.models.integration import IntegrationSettings
 from app.models.push import NotificationSchedule, PushSubscription
 from app.models.task import Task
 from app.models.team import Team, TeamRule
@@ -20,4 +21,5 @@ __all__ = [
     "Task",
     "Team",
     "TeamRule",
+    "IntegrationSettings",
 ]

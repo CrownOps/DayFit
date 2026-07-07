@@ -3,7 +3,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, books, calendar, habits, push, snippets, tasks, team, token_usage, users
+from app.api import (
+    auth,
+    books,
+    calendar,
+    habits,
+    integrations,
+    push,
+    snippets,
+    tasks,
+    team,
+    token_usage,
+    users,
+)
 from app.core.config import settings
 from app.services.notification_scheduler import start_scheduler, stop_scheduler
 
@@ -32,6 +44,7 @@ app.include_router(auth.router)
 app.include_router(books.router)
 app.include_router(calendar.router)
 app.include_router(habits.router)
+app.include_router(integrations.router)
 app.include_router(push.router)
 app.include_router(snippets.router)
 app.include_router(tasks.router)

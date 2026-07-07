@@ -7,6 +7,7 @@ import type {
   CalendarEvent,
   EventInput,
   GcsPulseQuota,
+  GoogleIntegration,
   Habit,
   HabitLog,
   HabitStats,
@@ -137,6 +138,14 @@ export const usersApi = {
     api<{ team_id: string; gcs_connected: boolean; completed: boolean }>(
       "/api/users/me/onboarding-status"
     ),
+};
+
+// ---- Integrations (Google OAuth config; admin) ----
+export const integrationsApi = {
+  getGoogle: () => api<GoogleIntegration>("/api/integrations/google"),
+  setGoogle: (body: { client_id: string; client_secret?: string; redirect_uri?: string }) =>
+    api<GoogleIntegration>("/api/integrations/google", { method: "PUT", body }),
+  googleStatus: () => api<{ configured: boolean }>("/api/integrations/google/status"),
 };
 
 // ---- Invite codes (admin) ----

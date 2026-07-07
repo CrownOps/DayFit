@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -15,14 +15,34 @@ from app.services import google_calendar as gcal
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
 
+def _callback_url(request: Request) -> str:
+    """Absolute URL of the OAuth callback, derived from the incoming request.
+
+    Used as a fallback redirect URI so the flow works even before an admin sets
+    one explicitly. Requires the app to run behind ``--proxy-headers`` so the
+    scheme is https in production.
+    """
+    return str(request.url_for("oauth_callback"))
+
+
 @router.get("/oauth/authorize", response_model=GoogleAuthUrlOut)
-def authorize(user: User = Depends(get_current_user)):
-    return GoogleAuthUrlOut(auth_url=gcal.get_authorization_url(user.id))
+def authorize(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        return GoogleAuthUrlOut(auth_url=gcal.get_authorization_url(db, user.id, _callback_url(request)))
+    except gcal.GoogleNotConfiguredError:
+        raise HTTPException(
+            status_code=400,
+            detail="Google 연동이 설정되지 않았습니다. 관리자가 설정에서 Google OAuth 값을 입력해야 합니다.",
+        )
 
 
 @router.get("/oauth/callback")
-def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
-    user_id, creds = gcal.exchange_code_for_tokens(code, state)
+def oauth_callback(request: Request, code: str, state: str, db: Session = Depends(get_db)):
+    try:
+        user_id, creds = gcal.exchange_code_for_tokens(db, code, state, _callback_url(request))
+    except gcal.GoogleNotConfiguredError:
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=not_configured")
+
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")

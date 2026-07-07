@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { calendarApi, pushApi, usersApi } from "@/lib/resources";
-import type { PushSubscriptionRow } from "@/lib/types";
+import { calendarApi, integrationsApi, pushApi, usersApi } from "@/lib/resources";
+import type { GoogleIntegration, PushSubscriptionRow } from "@/lib/types";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
@@ -37,6 +37,7 @@ export default function SettingsPage() {
 
       <PushSection />
       <GoogleCalendarSection connected={user?.google_calendar_connected ?? false} />
+      {user?.is_admin && <GoogleIntegrationAdminSection />}
       <GcsPulseSection />
       {user?.is_admin && (
         <Card className="space-y-2">
@@ -150,6 +151,19 @@ function PushSection() {
 function GoogleCalendarSection({ connected }: { connected: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    integrationsApi
+      .googleStatus()
+      .then((s) => setConfigured(s.configured))
+      .catch(() => setConfigured(false));
+    // Surface the callback outcome from the OAuth redirect.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("calendar") === "not_configured") {
+      setError("Google 연동이 아직 설정되지 않았습니다. 관리자가 아래에서 값을 입력해야 합니다.");
+    }
+  }, []);
 
   async function connect() {
     setBusy(true);
@@ -173,11 +187,121 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
           <p className="text-xs text-text-tertiary">
             연결하면 일정을 가져오고, 이 앱에서 만든 일정이 캘린더에 동기화됩니다. 캘린더 자체 알림은 꺼집니다.
           </p>
-          <Button onClick={connect} disabled={busy}>
+          {configured === false && (
+            <p className="text-xs text-warning">
+              아직 Google 연동이 설정되지 않았습니다. 관리자가 아래 &quot;Google 연동 설정&quot;에서 값을 입력해야 연결할 수 있습니다.
+            </p>
+          )}
+          <Button onClick={connect} disabled={busy || configured === false}>
             {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "Google Calendar 연결"}
           </Button>
         </>
       )}
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Card>
+  );
+}
+
+function GoogleIntegrationAdminSection() {
+  const [data, setData] = useState<GoogleIntegration | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const g = await integrationsApi.getGoogle();
+      setData(g);
+      setClientId(g.client_id ?? "");
+      setRedirectUri(g.redirect_uri ?? "");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다");
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    setError(null);
+    try {
+      const g = await integrationsApi.setGoogle({
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim() || undefined,
+        redirect_uri: redirectUri.trim() || undefined,
+      });
+      setData(g);
+      setClientSecret("");
+      setMsg("저장되었습니다. 이제 위에서 'Google Calendar 연결'을 눌러 연결하세요.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "저장에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const callback = data?.suggested_callback_url ?? "";
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-text-primary">Google 연동 설정 (관리자)</h2>
+        {data && (
+          <span className={data.configured ? "text-xs text-success" : "text-xs text-warning"}>
+            {data.configured ? "설정됨" : "미설정"}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-text-tertiary">
+        Google Cloud Console에서 만든 OAuth 2.0 클라이언트(웹 애플리케이션)의 값을 입력하세요. 아래 리디렉션 URI를
+        &quot;승인된 리디렉션 URI&quot;에 그대로 등록해야 합니다.
+      </p>
+
+      {callback && (
+        <div className="rounded-md border border-border bg-bg p-2">
+          <div className="text-xs text-text-tertiary">승인된 리디렉션 URI (복사해서 Google Console에 등록)</div>
+          <code className="block break-all text-xs text-text-secondary">{callback}</code>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="space-y-1">
+          <Label>Client ID</Label>
+          <Input
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder="xxxxx.apps.googleusercontent.com"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label>Client Secret</Label>
+          <Input
+            type="password"
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+            placeholder={data?.configured ? "저장됨 (변경 시에만 입력)" : "GOCSPX-..."}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label>리디렉션 URI (선택 — 비우면 위 값 자동 사용)</Label>
+          <Input
+            value={redirectUri}
+            onChange={(e) => setRedirectUri(e.target.value)}
+            placeholder={callback}
+          />
+        </div>
+      </div>
+
+      <Button onClick={save} disabled={busy || !clientId.trim()}>
+        {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
+      </Button>
+      {msg && <p className="text-sm text-text-secondary">{msg}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
     </Card>
   );
