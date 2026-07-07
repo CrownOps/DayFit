@@ -16,6 +16,11 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     team_id: Mapped[str] = mapped_column(String(64), default="")
 
+    # Per-user Google OAuth client (each member registers their own Cloud
+    # client and connects their own calendar). Secret is Fernet-encrypted.
+    google_client_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    google_client_secret_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
+
     google_oauth_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
     google_refresh_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
     google_calendar_connected: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -44,29 +44,45 @@ def get_settings_row(db: Session) -> IntegrationSettings | None:
     return db.get(IntegrationSettings, 1)
 
 
-def resolve_google_config(db: Session, request_redirect_uri: str | None = None) -> GoogleOAuthConfig | None:
-    """Effective Google OAuth config: DB row first, then env vars.
+def _client_credential_sources(db: Session, user: User | None):
+    """Yield (client_id, client_secret) pairs in priority order.
 
-    ``request_redirect_uri`` (derived from the incoming request) is used only as
-    a fallback when neither the stored value nor the env var is set. Returns
-    ``None`` when the client id/secret are missing (i.e. not configured).
+    Per-user credentials come first (each member registers their own Google
+    Cloud OAuth client), then an optional app-wide row, then env vars. Each
+    source is atomic — both id and secret must be present to be used.
     """
+    if user is not None and user.google_client_id and user.google_client_secret_encrypted:
+        yield user.google_client_id, decrypt_secret(user.google_client_secret_encrypted)
+
     row = get_settings_row(db)
+    if row and row.google_client_id and row.google_client_secret_encrypted:
+        yield row.google_client_id, decrypt_secret(row.google_client_secret_encrypted)
 
-    client_id = (row.google_client_id if row and row.google_client_id else "") or settings.google_client_id
-    if row and row.google_client_secret_encrypted:
-        client_secret = decrypt_secret(row.google_client_secret_encrypted)
-    else:
-        client_secret = settings.google_client_secret
+    if settings.google_client_id and settings.google_client_secret:
+        yield settings.google_client_id, settings.google_client_secret
 
+
+def resolve_google_config(
+    db: Session, user: User | None = None, request_redirect_uri: str | None = None
+) -> GoogleOAuthConfig | None:
+    """Effective Google OAuth config for ``user``: their own client first, then
+    an app-wide row, then env vars. Returns ``None`` when no complete
+    client id/secret pair is available.
+
+    The redirect URI is shared (the backend callback); each user's own Google
+    client must register it. ``request_redirect_uri`` is derived from the
+    incoming request when neither a stored value nor an env var is set.
+    """
+    client_id, client_secret = next(_client_credential_sources(db, user), ("", ""))
+    if not client_id or not client_secret:
+        return None
+
+    row = get_settings_row(db)
     redirect_uri = (
         (row.google_redirect_uri if row and row.google_redirect_uri else "")
         or request_redirect_uri
         or settings.google_redirect_uri
     )
-
-    if not client_id or not client_secret:
-        return None
     return GoogleOAuthConfig(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri or "")
 
 
@@ -88,11 +104,11 @@ def build_flow(config: GoogleOAuthConfig, state: str | None = None) -> Flow:
     )
 
 
-def get_authorization_url(db: Session, user_id: int, request_redirect_uri: str | None = None) -> str:
-    config = resolve_google_config(db, request_redirect_uri)
+def get_authorization_url(db: Session, user: User, request_redirect_uri: str | None = None) -> str:
+    config = resolve_google_config(db, user, request_redirect_uri)
     if config is None or not config.redirect_uri:
         raise GoogleNotConfiguredError()
-    flow = build_flow(config, state=str(user_id))
+    flow = build_flow(config, state=str(user.id))
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -104,7 +120,12 @@ def get_authorization_url(db: Session, user_id: int, request_redirect_uri: str |
 def exchange_code_for_tokens(
     db: Session, code: str, state: str, request_redirect_uri: str | None = None
 ) -> tuple[int, Credentials]:
-    config = resolve_google_config(db, request_redirect_uri)
+    # ``state`` is the user id set when the auth URL was built; resolve that
+    # user's own client to exchange the code (tokens are bound to it).
+    user = db.get(User, int(state))
+    if user is None:
+        raise GoogleNotConfiguredError()
+    config = resolve_google_config(db, user, request_redirect_uri)
     if config is None or not config.redirect_uri:
         raise GoogleNotConfiguredError()
     flow = build_flow(config, state=state)
@@ -145,7 +166,7 @@ def _load_credentials(user: User, config: GoogleOAuthConfig) -> Credentials:
 
 
 def get_calendar_service(user: User, db: Session):
-    config = resolve_google_config(db)
+    config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
     creds = _load_credentials(user, config)

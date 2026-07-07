@@ -14,10 +14,10 @@ export interface TokenResponse {
   token_type: string;
 }
 
-export interface GoogleIntegration {
+export interface MyGoogleIntegration {
   configured: boolean;
   client_id: string | null;
-  redirect_uri: string | null;
+  has_secret: boolean;
   suggested_callback_url: string;
 }
 

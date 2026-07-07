@@ -31,11 +31,11 @@ def _callback_url(request: Request) -> str:
 @router.get("/oauth/authorize", response_model=GoogleAuthUrlOut)
 def authorize(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        return GoogleAuthUrlOut(auth_url=gcal.get_authorization_url(db, user.id, _callback_url(request)))
+        return GoogleAuthUrlOut(auth_url=gcal.get_authorization_url(db, user, _callback_url(request)))
     except gcal.GoogleNotConfiguredError:
         raise HTTPException(
             status_code=400,
-            detail="Google 연동이 설정되지 않았습니다. 관리자가 설정에서 Google OAuth 값을 입력해야 합니다.",
+            detail="Google 연동이 설정되지 않았습니다. 설정에서 본인 Google API(Client ID/Secret)를 먼저 입력하세요.",
         )
 
 

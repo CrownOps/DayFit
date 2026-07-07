@@ -7,7 +7,7 @@ import type {
   CalendarEvent,
   EventInput,
   GcsPulseQuota,
-  GoogleIntegration,
+  MyGoogleIntegration,
   Habit,
   HabitLog,
   HabitStats,
@@ -140,11 +140,12 @@ export const usersApi = {
     ),
 };
 
-// ---- Integrations (Google OAuth config; admin) ----
+// ---- Integrations (per-user Google OAuth client) ----
 export const integrationsApi = {
-  getGoogle: () => api<GoogleIntegration>("/api/integrations/google"),
-  setGoogle: (body: { client_id: string; client_secret?: string; redirect_uri?: string }) =>
-    api<GoogleIntegration>("/api/integrations/google", { method: "PUT", body }),
+  // Per-user: each member enters their own Google Client ID/Secret.
+  getMyGoogle: () => api<MyGoogleIntegration>("/api/integrations/google/me"),
+  setMyGoogle: (body: { client_id: string; client_secret?: string }) =>
+    api<MyGoogleIntegration>("/api/integrations/google/me", { method: "PUT", body }),
   googleStatus: () => api<{ configured: boolean }>("/api/integrations/google/status"),
 };
 
