@@ -1,5 +1,9 @@
 import { api } from "./api";
 import type {
+  Book,
+  BookInput,
+  BookScope,
+  BookStatus,
   CalendarEvent,
   EventInput,
   GcsPulseQuota,
@@ -13,6 +17,8 @@ import type {
   Task,
   TaskScope,
   TeamHealthEntry,
+  TeamProfile,
+  TeamRule,
   TokenUsageLog,
 } from "./types";
 
@@ -71,6 +77,29 @@ export const tasksApi = {
   update: (id: number, body: { title?: string; completed?: boolean }) =>
     api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+};
+
+// ---- Books (Reading) ----
+export const booksApi = {
+  list: (scope: BookScope = "own", status?: BookStatus) =>
+    api<Book[]>("/api/books", { query: { scope, status } }),
+  create: (body: BookInput) => api<Book>("/api/books", { method: "POST", body }),
+  update: (id: number, body: Partial<BookInput>) =>
+    api<Book>(`/api/books/${id}`, { method: "PATCH", body }),
+  remove: (id: number) => api<void>(`/api/books/${id}`, { method: "DELETE" }),
+};
+
+// ---- Team space (vision / mission / rules) ----
+export const teamSpaceApi = {
+  profile: () => api<TeamProfile>("/api/team/profile"),
+  updateProfile: (body: { vision: string; mission: string }) =>
+    api<TeamProfile>("/api/team/profile", { method: "PUT", body }),
+  rules: () => api<TeamRule[]>("/api/team/rules"),
+  createRule: (content: string) =>
+    api<TeamRule>("/api/team/rules", { method: "POST", body: { content } }),
+  updateRule: (id: number, body: { content?: string; sort_order?: number }) =>
+    api<TeamRule>(`/api/team/rules/${id}`, { method: "PATCH", body }),
+  removeRule: (id: number) => api<void>(`/api/team/rules/${id}`, { method: "DELETE" }),
 };
 
 // ---- Token usage ----
