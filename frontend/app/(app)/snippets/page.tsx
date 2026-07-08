@@ -19,6 +19,14 @@ export default function SnippetsPage() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // AI 제안 (organize) + AI 채점 (feedback) state for the write box.
+  const [organizing, setOrganizing] = useState(false);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [scoring, setScoring] = useState(false);
+  const [feedback, setFeedback] = useState<{ ai_score: number | null; feedback: string | null } | null>(
+    null
+  );
+
   // Filters for the recent list (member is team-scope only).
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
@@ -117,6 +125,40 @@ export default function SnippetsPage() {
     }
   }
 
+  // AI 제안: ask the AI to reorganize the current draft (does not save).
+  async function runOrganize() {
+    if (!draft.trim()) return;
+    setOrganizing(true);
+    setError(null);
+    try {
+      const res = await snippetsApi.organize(draft);
+      setSuggestion(res.organized_content);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "AI 제안에 실패했습니다");
+    } finally {
+      setOrganizing(false);
+    }
+  }
+
+  // AI 채점: grade today's snippet. Saves the current draft first (feedback
+  // runs against the saved snippet on the server).
+  async function runFeedback() {
+    if (!draft.trim()) return;
+    setScoring(true);
+    setError(null);
+    try {
+      if (!myToday) await snippetsApi.create(draft);
+      else if (draft !== myToday.content) await snippetsApi.update(myToday.id, draft);
+      const res = await snippetsApi.feedback();
+      setFeedback(res);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "AI 채점에 실패했습니다");
+    } finally {
+      setScoring(false);
+    }
+  }
+
   // Reset filters when switching scope (member filter is meaningless in own scope).
   useEffect(() => {
     setMemberFilter("all");
@@ -187,9 +229,50 @@ export default function SnippetsPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             className="font-mono text-xs leading-relaxed"
-            placeholder="오늘 한 일, 블로커, 배운 점 등을 자유롭게 기록하세요. 기록을 저장하면 AI가 채점한 점수(0~100)가 잔디 색에 반영됩니다."
+            placeholder="오늘 한 일, 블로커, 배운 점 등을 자유롭게 기록하세요. 'AI 제안'으로 정리하고 'AI 채점'으로 점수(0~100)를 받아보세요."
           />
-          <div className="flex justify-end">
+
+          {/* AI 제안 결과 */}
+          {suggestion !== null && (
+            <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-accent">AI 제안 (정리본)</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(suggestion);
+                      setSuggestion(null);
+                    }}
+                    className="text-xs font-medium text-accent hover:underline"
+                  >
+                    적용
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSuggestion(null)}
+                    className="text-xs text-text-tertiary hover:text-text-secondary"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+              <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text-primary">
+                {suggestion}
+              </p>
+            </div>
+          )}
+
+          {/* AI 채점 결과 */}
+          {feedback !== null && <FeedbackPanel result={feedback} onClose={() => setFeedback(null)} />}
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" onClick={runOrganize} disabled={organizing || !draft.trim()}>
+              {organizing ? <Spinner className="h-4 w-4" /> : "AI 제안"}
+            </Button>
+            <Button variant="secondary" onClick={runFeedback} disabled={scoring || !draft.trim()}>
+              {scoring ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "AI 채점"}
+            </Button>
             <Button onClick={saveDraft} disabled={saving || !draft.trim()}>
               {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
             </Button>
@@ -281,6 +364,86 @@ export default function SnippetsPage() {
           <SnippetCard key={s.id} snippet={s} showAuthor={scope === "team"} />
         ))}
       </section>
+    </div>
+  );
+}
+
+function FeedbackPanel({
+  result,
+  onClose,
+}: {
+  result: { ai_score: number | null; feedback: string | null };
+  onClose: () => void;
+}) {
+  // `feedback` is a JSON string from GCS Pulse (e.g. {"total_score":86,"scores":{...},...}).
+  // Render the score prominently, a per-category breakdown when present, and any
+  // text fields; fall back to the raw string if it isn't parseable JSON.
+  const parsed = useMemo(() => {
+    if (!result.feedback) return null;
+    try {
+      const data = JSON.parse(result.feedback);
+      return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }, [result.feedback]);
+
+  const breakdown =
+    parsed && typeof parsed.scores === "object" && parsed.scores !== null
+      ? Object.entries(parsed.scores as Record<string, unknown>).filter(
+          ([, v]) => typeof v === "number" || typeof v === "string"
+        )
+      : [];
+
+  // Any remaining string-valued fields become comment paragraphs.
+  const comments = parsed
+    ? Object.entries(parsed).filter(
+        ([k, v]) => typeof v === "string" && k !== "total_score" && k !== "scores"
+      )
+    : [];
+
+  return (
+    <div className="rounded-lg border border-accent-secondary/40 bg-accent-secondary/5 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-accent-secondary">AI 채점 결과</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-text-tertiary hover:text-text-secondary"
+        >
+          닫기
+        </button>
+      </div>
+
+      {result.ai_score !== null ? (
+        <div className="flex items-baseline gap-1">
+          <span className="text-2xl font-semibold text-text-primary">{result.ai_score}</span>
+          <span className="text-sm text-text-tertiary">/ 100</span>
+        </div>
+      ) : (
+        <p className="text-sm text-text-tertiary">점수를 불러오지 못했습니다.</p>
+      )}
+
+      {breakdown.length > 0 && (
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {breakdown.map(([k, v]) => (
+            <li key={k} className="flex items-center justify-between text-xs">
+              <span className="text-text-secondary">{k}</span>
+              <span className="font-mono text-text-primary">{String(v)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {comments.map(([k, v]) => (
+        <p key={k} className="whitespace-pre-wrap text-sm text-text-primary">
+          {String(v)}
+        </p>
+      ))}
+
+      {!parsed && result.feedback && (
+        <p className="whitespace-pre-wrap text-sm text-text-primary">{result.feedback}</p>
+      )}
     </div>
   );
 }

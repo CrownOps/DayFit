@@ -130,14 +130,18 @@ export interface PushSubscriptionRow {
 }
 
 export type TaskScope = "today" | "week";
+export type TaskStatus = "todo" | "in_progress" | "done";
+export type TaskView = "own" | "team";
 
 export interface Task {
   id: number;
   title: string;
   scope: TaskScope;
   anchor_date: string;
+  status: TaskStatus;
   completed: boolean;
   sort_order: number;
+  owner: { id: number; name: string } | null;
 }
 
 export type BookStatus = "want" | "reading" | "done";
@@ -173,4 +177,46 @@ export interface BookInput {
   status?: BookStatus;
   rating?: number | null;
   review?: string;
+}
+
+export interface PersonRef {
+  id: number;
+  name: string;
+}
+
+export type BottleneckPriority = "high" | "medium" | "low";
+export type BottleneckStatus = "open" | "in_progress" | "resolved";
+
+export interface BottleneckAction {
+  id: number;
+  bottleneck_id: number;
+  content: string;
+  effect: string;
+  done: boolean;
+  creator: PersonRef | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bottleneck {
+  id: number;
+  title: string;
+  description: string;
+  priority: BottleneckPriority;
+  status: BottleneckStatus;
+  occurred_at: string;
+  deadline: string | null;
+  creator: PersonRef | null;
+  actions: BottleneckAction[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BottleneckInput {
+  title: string;
+  description?: string;
+  priority?: BottleneckPriority;
+  status?: BottleneckStatus;
+  occurred_at?: string | null;
+  deadline?: string | null;
 }

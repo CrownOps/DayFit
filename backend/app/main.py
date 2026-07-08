@@ -9,6 +9,7 @@ from googleapiclient.errors import HttpError
 from app.api import (
     auth,
     books,
+    bottlenecks,
     calendar,
     habits,
     integrations,
@@ -65,6 +66,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(books.router)
+app.include_router(bottlenecks.router)
 app.include_router(calendar.router)
 app.include_router(habits.router)
 app.include_router(integrations.router)

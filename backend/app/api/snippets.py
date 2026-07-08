@@ -7,7 +7,16 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.snippet import HeatmapDay, SnippetAuthor, SnippetOut, SnippetCreate, SnippetUpdate, TeamHealthEntry
+from app.schemas.snippet import (
+    HeatmapDay,
+    SnippetAuthor,
+    SnippetCreate,
+    SnippetFeedbackOut,
+    SnippetOrganizeOut,
+    SnippetOut,
+    SnippetUpdate,
+    TeamHealthEntry,
+)
 from app.services import gcs_pulse_client as gcs
 from app.services.gcs_pulse_client import GcsPulseError
 from app.services.snippet_parser import extract_ai_score, extract_condition_score
@@ -53,6 +62,31 @@ def create_snippet(payload: SnippetCreate, user: User = Depends(get_current_user
     except GcsPulseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     return _to_snippet_out(item)
+
+
+@router.post("/api/snippets/organize", response_model=SnippetOrganizeOut)
+def organize_snippet(payload: SnippetCreate, user: User = Depends(get_current_user)):
+    """AI 제안: return an AI-reorganized version of the draft (does not save)."""
+    try:
+        item = gcs.organize_daily_snippet(user, payload.content)
+    except GcsPulseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return SnippetOrganizeOut(date=item["date"], organized_content=item["organized_content"])
+
+
+@router.get("/api/snippets/feedback", response_model=SnippetFeedbackOut)
+def snippet_feedback(user: User = Depends(get_current_user)):
+    """AI 채점: grade the user's saved snippet for today and return the score."""
+    try:
+        item = gcs.generate_daily_snippet_feedback(user)
+    except GcsPulseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    feedback = item.get("feedback")
+    return SnippetFeedbackOut(
+        date=item["date"],
+        ai_score=extract_ai_score(feedback),
+        feedback=feedback,
+    )
 
 
 @router.put("/api/snippets/{snippet_id}", response_model=SnippetOut)
