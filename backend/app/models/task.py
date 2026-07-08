@@ -19,6 +19,9 @@ class Task(Base):
     scope: Mapped[str] = mapped_column(String(16), default="today")
     anchor_date: Mapped[date] = mapped_column(Date, index=True)
 
+    # Progress state: "todo" -> "in_progress" -> "done". `completed` is kept in
+    # sync (completed == status == "done") for backward compatibility.
+    status: Mapped[str] = mapped_column(String(16), default="todo")
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 

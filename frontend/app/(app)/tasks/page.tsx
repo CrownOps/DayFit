@@ -1,22 +1,39 @@
 "use client";
 
+import { useState } from "react";
 import { koreanDate } from "@/lib/dates";
-import { TaskWidget } from "@/components/TaskWidget";
+import { TaskBoard } from "@/components/TaskBoard";
+import { TeamTasks } from "@/components/TeamTasks";
+import { clsx } from "@/lib/clsx";
 
 export default function TasksPage() {
   const now = new Date();
+  const [view, setView] = useState<"own" | "team">("own");
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">할 일</h1>
-        <p className="text-sm text-text-secondary">{koreanDate(now)}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">할 일</h1>
+          <p className="text-sm text-text-secondary">{koreanDate(now)}</p>
+        </div>
+        <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+          {(["own", "team"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={clsx(
+                "px-3 py-1 rounded-md text-sm transition-colors",
+                view === v ? "bg-accent text-white" : "text-text-secondary"
+              )}
+            >
+              {v === "own" ? "내 할 일" : "팀"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <TaskWidget scope="today" title="오늘 할 일" accent="accent" />
-        <TaskWidget scope="week" title="이번 주 할 일" accent="secondary" />
-      </section>
+      {view === "own" ? <TaskBoard /> : <TeamTasks />}
     </div>
   );
 }

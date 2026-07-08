@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/auth";
 import { koreanDate } from "@/lib/dates";
-import { TaskWidget } from "@/components/TaskWidget";
+import { TaskBoard } from "@/components/TaskBoard";
 import {
   HabitsWidget,
   ScheduleWidget,
@@ -31,10 +31,7 @@ export default function HomePage() {
       <VisionWidget />
 
       {/* Tasks — the pinned focus of the home screen */}
-      <section className="grid gap-4 md:grid-cols-2">
-        <TaskWidget scope="today" title="오늘 할 일" accent="accent" />
-        <TaskWidget scope="week" title="이번 주 할 일" accent="secondary" />
-      </section>
+      <TaskBoard />
 
       {/* Glanceable summary widgets */}
       <section className="grid gap-4 sm:grid-cols-2">

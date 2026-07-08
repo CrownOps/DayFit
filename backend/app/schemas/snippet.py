@@ -29,6 +29,21 @@ class SnippetOut(BaseModel):
     updated_at: datetime
 
 
+class SnippetOrganizeOut(BaseModel):
+    """AI 제안 result: the AI-reorganized version of a draft."""
+
+    date: date
+    organized_content: str
+
+
+class SnippetFeedbackOut(BaseModel):
+    """AI 채점 result: the grading score plus the raw feedback payload."""
+
+    date: date
+    ai_score: int | None = None
+    feedback: str | None = None
+
+
 class HeatmapDay(BaseModel):
     date: date
     written: bool

@@ -12,7 +12,7 @@ class GcsPulseError(Exception):
         super().__init__(detail)
 
 
-def _client(user: User) -> httpx.Client:
+def _client(user: User, timeout: float = 15.0) -> httpx.Client:
     if not user.gcs_pulse_api_token_encrypted:
         raise GcsPulseError(400, "GCS Pulse API 토큰이 등록되어 있지 않습니다")
 
@@ -20,7 +20,7 @@ def _client(user: User) -> httpx.Client:
     return httpx.Client(
         base_url=settings.gcs_pulse_base_url,
         headers={"Authorization": f"Bearer {token}"},
-        timeout=15.0,
+        timeout=timeout,
     )
 
 
@@ -74,6 +74,29 @@ def delete_daily_snippet(user: User, snippet_id: int) -> None:
     with _client(user) as client:
         resp = client.delete(f"/daily-snippets/{snippet_id}")
         _raise_for_status(resp)
+
+
+def organize_daily_snippet(user: User, content: str) -> dict:
+    """AI 제안: reorganize/improve a draft snippet. Returns {date, organized_content}.
+
+    The GCS Pulse side runs an LLM, so allow a generous timeout.
+    """
+    with _client(user, timeout=60.0) as client:
+        resp = client.post("/daily-snippets/organize", json={"content": content})
+        _raise_for_status(resp)
+        return resp.json()
+
+
+def generate_daily_snippet_feedback(user: User) -> dict:
+    """AI 채점: grade today's saved snippet. Returns {date, feedback}.
+
+    Operates on the user's already-saved snippet for today (no body), so the
+    caller must have created/updated today's snippet first.
+    """
+    with _client(user, timeout=60.0) as client:
+        resp = client.get("/daily-snippets/feedback")
+        _raise_for_status(resp)
+        return resp.json()
 
 
 def create_comment(user: User, daily_snippet_id: int, content: str) -> dict:

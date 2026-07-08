@@ -4,6 +4,9 @@ import type {
   BookInput,
   BookScope,
   BookStatus,
+  Bottleneck,
+  BottleneckAction,
+  BottleneckInput,
   CalendarEvent,
   EventInput,
   GcsPulseQuota,
@@ -17,6 +20,8 @@ import type {
   Snippet,
   Task,
   TaskScope,
+  TaskStatus,
+  TaskView,
   TeamHealthEntry,
   TeamProfile,
   TeamRule,
@@ -64,6 +69,15 @@ export const snippetsApi = {
     api<HeatmapDay[]>("/api/snippets/heatmap", { query: { year, month, scope } }),
   comment: (id: number, content: string) =>
     api<unknown>(`/api/snippets/${id}/comments`, { method: "POST", query: { content } }),
+  // AI 제안: reorganize a draft (does not save).
+  organize: (content: string) =>
+    api<{ date: string; organized_content: string }>("/api/snippets/organize", {
+      method: "POST",
+      body: { content },
+    }),
+  // AI 채점: grade today's saved snippet (must be saved first).
+  feedback: () =>
+    api<{ date: string; ai_score: number | null; feedback: string | null }>("/api/snippets/feedback"),
 };
 
 export const teamApi = {
@@ -72,12 +86,17 @@ export const teamApi = {
 
 // ---- Tasks (To-Do) ----
 export const tasksApi = {
-  list: (scope: TaskScope) => api<Task[]>("/api/tasks", { query: { scope } }),
+  list: (scope: TaskScope, view: TaskView = "own") =>
+    api<Task[]>("/api/tasks", { query: { scope, view } }),
   create: (title: string, scope: TaskScope) =>
     api<Task>("/api/tasks", { method: "POST", body: { title, scope } }),
-  update: (id: number, body: { title?: string; completed?: boolean }) =>
+  update: (id: number, body: { title?: string; status?: TaskStatus; completed?: boolean }) =>
     api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  // Move/reorder: `ids` is the target column's full order; any task not already
+  // in `scope` is moved into it. Returns the updated tasks for that column.
+  reorder: (scope: TaskScope, ids: number[]) =>
+    api<Task[]>("/api/tasks/reorder", { method: "PUT", body: { scope, ids } }),
 };
 
 // ---- Books (Reading) ----
@@ -88,6 +107,25 @@ export const booksApi = {
   update: (id: number, body: Partial<BookInput>) =>
     api<Book>(`/api/books/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/books/${id}`, { method: "DELETE" }),
+};
+
+// ---- Bottlenecks (팀/프로젝트 병목) ----
+export const bottlenecksApi = {
+  list: () => api<Bottleneck[]>("/api/bottlenecks"),
+  create: (body: BottleneckInput) =>
+    api<Bottleneck>("/api/bottlenecks", { method: "POST", body }),
+  update: (id: number, body: Partial<BottleneckInput>) =>
+    api<Bottleneck>(`/api/bottlenecks/${id}`, { method: "PATCH", body }),
+  remove: (id: number) => api<void>(`/api/bottlenecks/${id}`, { method: "DELETE" }),
+  addAction: (id: number, body: { content: string; effect?: string; done?: boolean }) =>
+    api<BottleneckAction>(`/api/bottlenecks/${id}/actions`, { method: "POST", body }),
+  updateAction: (
+    id: number,
+    actionId: number,
+    body: { content?: string; effect?: string; done?: boolean }
+  ) => api<BottleneckAction>(`/api/bottlenecks/${id}/actions/${actionId}`, { method: "PATCH", body }),
+  removeAction: (id: number, actionId: number) =>
+    api<void>(`/api/bottlenecks/${id}/actions/${actionId}`, { method: "DELETE" }),
 };
 
 // ---- Team space (vision / mission / rules) ----

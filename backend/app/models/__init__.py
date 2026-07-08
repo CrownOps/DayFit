@@ -1,4 +1,5 @@
 from app.models.book import Book
+from app.models.bottleneck import Bottleneck, BottleneckAction
 from app.models.calendar import CalendarEventCache
 from app.models.habit import Habit, HabitLog
 from app.models.integration import IntegrationSettings
@@ -12,6 +13,8 @@ __all__ = [
     "User",
     "InviteCode",
     "Book",
+    "Bottleneck",
+    "BottleneckAction",
     "CalendarEventCache",
     "Habit",
     "HabitLog",
