@@ -14,11 +14,9 @@ const COLUMNS: {
   scope: TaskScope;
   title: string;
   accent: "accent" | "secondary";
-  other: TaskScope;
-  moveLabel: string;
 }[] = [
-  { scope: "today", title: "오늘 할 일", accent: "accent", other: "week", moveLabel: "이번 주로" },
-  { scope: "week", title: "이번 주 할 일", accent: "secondary", other: "today", moveLabel: "오늘로" },
+  { scope: "today", title: "오늘 할 일", accent: "accent" },
+  { scope: "week", title: "이번 주 할 일", accent: "secondary" },
 ];
 
 interface DropTarget {
@@ -28,8 +26,9 @@ interface DropTarget {
 
 /**
  * Two-column to-do board (오늘 / 이번 주). Each task is a draggable block that can
- * be reordered within a column or dragged to the other column; a "옮기기" button
- * provides the same move for touch devices where native drag-and-drop is unavailable.
+ * be reordered within a column or dragged to the other column — moving between
+ * 오늘/이번 주 is done purely by dragging the block. The title is editable inline
+ * (click the text to rename).
  */
 export function TaskBoard() {
   const [lists, setLists] = useState<Lists>({ today: [], week: [] });
@@ -86,6 +85,20 @@ export function TaskBoard() {
     }));
     try {
       await tasksApi.update(task.id, { status });
+    } catch {
+      load();
+    }
+  }
+
+  async function editTitle(scope: TaskScope, task: Task, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === task.title) return;
+    setLists((prev) => ({
+      ...prev,
+      [scope]: prev[scope].map((t) => (t.id === task.id ? { ...t, title: trimmed } : t)),
+    }));
+    try {
+      await tasksApi.update(task.id, { title: trimmed });
     } catch {
       load();
     }
@@ -157,8 +170,8 @@ export function TaskBoard() {
             dropTarget={dropTarget}
             onAdd={(title) => addTask(col.scope, title)}
             onCycle={(task) => cycleStatus(col.scope, task)}
+            onEdit={(task, title) => editTitle(col.scope, task, title)}
             onRemove={(task) => removeTask(col.scope, task)}
-            onMoveToOther={(task) => moveTask(task.id, col.scope, col.other, null)}
             onDragStartTask={(task) => {
               setDraggingId(task.id);
               draggingFrom.current = col.scope;
@@ -181,8 +194,8 @@ function Column({
   dropTarget,
   onAdd,
   onCycle,
+  onEdit,
   onRemove,
-  onMoveToOther,
   onDragStartTask,
   onDragEndTask,
   onHover,
@@ -195,8 +208,8 @@ function Column({
   dropTarget: DropTarget | null;
   onAdd: (title: string) => void;
   onCycle: (task: Task) => void;
+  onEdit: (task: Task, title: string) => void;
   onRemove: (task: Task) => void;
-  onMoveToOther: (task: Task) => void;
   onDragStartTask: (task: Task) => void;
   onDragEndTask: () => void;
   onHover: (t: DropTarget | null) => void;
@@ -274,11 +287,10 @@ function Column({
               {lineBefore === task.id && <DropLine />}
               <TaskRow
                 task={task}
-                moveLabel={col.moveLabel}
                 dragging={draggingId === task.id}
                 onCycle={() => onCycle(task)}
+                onEdit={(title) => onEdit(task, title)}
                 onRemove={() => onRemove(task)}
-                onMoveToOther={() => onMoveToOther(task)}
                 onDragStart={() => onDragStartTask(task)}
                 onDragEnd={onDragEndTask}
                 onDragOver={(e) => {
@@ -311,30 +323,42 @@ function DropLine() {
 
 function TaskRow({
   task,
-  moveLabel,
   dragging,
   onCycle,
+  onEdit,
   onRemove,
-  onMoveToOther,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDrop,
 }: {
   task: Task;
-  moveLabel: string;
   dragging: boolean;
   onCycle: () => void;
+  onEdit: (title: string) => void;
   onRemove: () => void;
-  onMoveToOther: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(task.title);
+
+  function startEdit() {
+    setValue(task.title);
+    setEditing(true);
+  }
+
+  function commit() {
+    setEditing(false);
+    onEdit(value);
+  }
+
   return (
     <div
-      draggable
+      // Disable dragging while editing so text selection works inside the input.
+      draggable={!editing}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", String(task.id));
@@ -345,7 +369,8 @@ function TaskRow({
       onDrop={onDrop}
       className={clsx(
         "group flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2",
-        "cursor-grab active:cursor-grabbing transition-opacity",
+        !editing && "cursor-grab active:cursor-grabbing",
+        "transition-opacity",
         dragging && "opacity-40"
       )}
     >
@@ -353,18 +378,36 @@ function TaskRow({
         ⠿
       </span>
       <StatusToggle status={task.status} onClick={onCycle} />
-      <span className={clsx("flex-1 min-w-0 text-sm break-words", STATUS_META[task.status].text)}>
-        {task.title}
-      </span>
-      <button
-        type="button"
-        onClick={onMoveToOther}
-        title={moveLabel}
-        aria-label={`${moveLabel} 옮기기`}
-        className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-text-secondary hover:border-accent hover:text-accent transition-colors"
-      >
-        {moveLabel}
-      </button>
+      {editing ? (
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              setEditing(false);
+              setValue(task.title);
+            }
+          }}
+          className="flex-1 min-w-0 rounded-md border border-accent bg-surface px-1.5 py-0.5 text-sm text-text-primary outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={startEdit}
+          title="클릭하여 수정"
+          className={clsx(
+            "flex-1 min-w-0 text-left text-sm break-words hover:text-accent transition-colors",
+            STATUS_META[task.status].text
+          )}
+        >
+          {task.title}
+        </button>
+      )}
       <button
         type="button"
         onClick={onRemove}

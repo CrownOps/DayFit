@@ -40,9 +40,16 @@ class TaskOut(BaseModel):
 
     id: int
     title: str
-    scope: Scope
+    # "team" is used for unclaimed shared-pool items; the board only ever sees today/week.
+    scope: str
     anchor_date: date
     status: TaskStatus
     completed: bool
     sort_order: int
     owner: Optional[TaskOwner] = None
+
+
+class TeamTaskCreate(BaseModel):
+    """A new item for the team's shared pool ("팀 할일")."""
+
+    title: str = Field(min_length=1, max_length=500)
