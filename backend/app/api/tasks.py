@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -145,6 +145,25 @@ def list_team_pool(user: User = Depends(get_current_user), db: Session = Depends
     return [_pool_out(task) for task in rows]
 
 
+@router.get("/team-pool/claimed", response_model=list[TaskOut])
+def list_claimed_team_tasks(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Record of team-pool tasks that have been claimed (most recent first).
+
+    Each still carries its ``team_id`` so it can be restored to the pool; the
+    owner and ``claimed_at`` show who took it and when.
+    """
+    if not user.team_id:
+        return []
+    rows = (
+        db.query(Task, User.id, User.name)
+        .join(User, Task.user_id == User.id)
+        .filter(Task.team_id == user.team_id, Task.user_id.isnot(None))
+        .order_by(Task.claimed_at.desc().nullslast(), Task.id.desc())
+        .all()
+    )
+    return [_to_out(task, uid, uname) for task, uid, uname in rows]
+
+
 @router.post("/team-pool", response_model=TaskOut)
 def create_team_task(
     payload: TeamTaskCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -174,7 +193,11 @@ def create_team_task(
 def claim_team_task(
     task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """Take an unclaimed pool item as a personal today-task."""
+    """Take an unclaimed pool item as a personal today-task.
+
+    ``team_id`` is kept (not cleared) so the claim stays as a restorable record;
+    ``claimed_at`` records when it was taken.
+    """
     task = db.get(Task, task_id)
     if task is None or task.user_id is not None or task.team_id != user.team_id or not user.team_id:
         raise HTTPException(status_code=404, detail="Team task not found")
@@ -185,14 +208,40 @@ def claim_team_task(
         .scalar()
     )
     task.user_id = user.id
-    task.team_id = None
     task.scope = "today"
     task.anchor_date = today
+    task.claimed_at = datetime.now(timezone.utc)
     task.sort_order = (max_order or 0) + 1
     db.add(task)
     db.commit()
     db.refresh(task)
     return _to_out(task, user.id, user.name)
+
+
+@router.post("/team-pool/{task_id}/restore", response_model=TaskOut)
+def restore_team_task(
+    task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Return a claimed task to the team pool (undo a claim)."""
+    task = db.get(Task, task_id)
+    if task is None or task.user_id is None or task.team_id != user.team_id or not user.team_id:
+        raise HTTPException(status_code=404, detail="Team task not found")
+    max_order = (
+        db.query(func.coalesce(func.max(Task.sort_order), 0))
+        .filter(Task.team_id == user.team_id, Task.user_id.is_(None))
+        .scalar()
+    )
+    task.user_id = None
+    task.scope = "team"
+    task.anchor_date = date.today()
+    task.status = "todo"
+    task.completed = False
+    task.claimed_at = None
+    task.sort_order = (max_order or 0) + 1
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return _pool_out(task)
 
 
 @router.delete("/team-pool/{task_id}", status_code=204)

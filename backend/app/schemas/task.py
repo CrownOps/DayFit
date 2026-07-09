@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,6 +47,8 @@ class TaskOut(BaseModel):
     completed: bool
     sort_order: int
     owner: Optional[TaskOwner] = None
+    # When this task was claimed from the team pool (null unless it's a claim record).
+    claimed_at: Optional[datetime] = None
 
 
 class TeamTaskCreate(BaseModel):

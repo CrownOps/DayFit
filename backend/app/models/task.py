@@ -10,18 +10,22 @@ from app.core.database import Base
 class Task(Base):
     """A lightweight to-do item, scoped to a day ("today") or a week ("week").
 
-    A task can also sit in a team's shared pool ("팀 할일"): such a task has no
-    owner (``user_id`` is NULL) and belongs to ``team_id``. Any teammate can
-    "claim" it, which assigns it to them as a personal today-task.
+    A task can also sit in a team's shared pool ("팀 할 일"): such a task belongs
+    to ``team_id`` and is available while ``user_id`` is NULL. When a teammate
+    "claims" it, ``user_id`` is set to them and ``claimed_at`` is stamped — but
+    ``team_id`` stays set so the claim is kept as a restorable record. Restoring
+    clears ``user_id``/``claimed_at`` and returns it to the pool.
     """
 
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # NULL while the task sits in a team's shared pool; set to the owner once claimed/created personally.
+    # NULL while a team-pool task is unclaimed; set to the owner once claimed/created personally.
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
-    # Set only for unclaimed team-pool tasks; NULL for personal tasks.
+    # Set for team-pool tasks (available AND claimed); NULL for purely personal tasks.
     team_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # When a team-pool task was claimed (NULL while available or for personal tasks).
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     title: Mapped[str] = mapped_column(String(500))
     # "today" -> anchor_date is the specific day; "week" -> anchor_date is the Monday of that week;

@@ -5,15 +5,27 @@ import { tasksApi } from "@/lib/resources";
 import type { Task } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { Card, Spinner } from "@/components/ui";
+import { StatusBadge } from "@/components/TaskStatus";
 import { clsx } from "@/lib/clsx";
+
+/** "M월 D일 HH:MM" for a claim timestamp. */
+function claimedLabel(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${hh}:${mm}`;
+}
 
 /**
  * Shared team backlog ("팀 할 일"). Anyone on the team can add an item to the pool,
- * and any teammate can "가져가기" (claim) one — which removes it from the pool and
- * drops it into that person's own 오늘 할 일 list.
+ * and any teammate can "가져가기" (claim) one — which moves it into that person's
+ * own 오늘 할 일 list. Claimed items are kept as a record (누가·언제 가져갔는지) and
+ * can be "복구" (restored) back to the pool.
  */
 export function TeamTaskPool() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [claimed, setClaimed] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -22,7 +34,12 @@ export function TeamTaskPool() {
     setLoading(true);
     setError(null);
     try {
-      setTasks(await tasksApi.teamPool());
+      const [pool, claimedList] = await Promise.all([
+        tasksApi.teamPool(),
+        tasksApi.claimedTeamTasks(),
+      ]);
+      setTasks(pool);
+      setClaimed(claimedList);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다");
     } finally {
@@ -47,10 +64,25 @@ export function TeamTaskPool() {
     setBusyId(task.id);
     setError(null);
     try {
-      await tasksApi.claimTeamTask(task.id);
+      const record = await tasksApi.claimTeamTask(task.id);
       setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      setClaimed((prev) => [record, ...prev]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "가져오기에 실패했습니다");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function restore(task: Task) {
+    setBusyId(task.id);
+    setError(null);
+    try {
+      const restored = await tasksApi.restoreTeamTask(task.id);
+      setClaimed((prev) => prev.filter((t) => t.id !== task.id));
+      setTasks((prev) => [...prev, restored]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "복구에 실패했습니다");
     } finally {
       setBusyId(null);
     }
@@ -66,7 +98,7 @@ export function TeamTaskPool() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {error && <p className="text-sm text-danger">{error}</p>}
       <Card className="space-y-3">
         <div className="flex items-center justify-between">
@@ -127,6 +159,58 @@ export function TeamTaskPool() {
 
         <AddForm onAdd={addTask} />
       </Card>
+
+      {!loading && claimed.length > 0 && (
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-text-tertiary" />
+              <h2 className="text-sm font-semibold text-text-primary">가져간 기록</h2>
+            </div>
+            <span className="text-xs font-mono text-text-tertiary">{claimed.length}개</span>
+          </div>
+          <p className="text-xs text-text-tertiary">
+            누가 언제 가져갔는지 기록입니다. &apos;복구&apos;를 누르면 다시 팀 할 일로 되돌립니다.
+          </p>
+          <ul className="space-y-1.5">
+            {claimed.map((task) => (
+              <li
+                key={task.id}
+                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2"
+              >
+                <StatusBadge status={task.status} />
+                <div className="flex-1 min-w-0">
+                  <p
+                    className={clsx(
+                      "text-sm break-words",
+                      task.status === "done"
+                        ? "text-text-tertiary line-through"
+                        : "text-text-primary"
+                    )}
+                  >
+                    {task.title}
+                  </p>
+                  <p className="text-[11px] text-text-tertiary">
+                    {task.owner?.name ?? "알 수 없음"}
+                    {task.claimed_at ? ` · ${claimedLabel(task.claimed_at)}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => restore(task)}
+                  disabled={busyId === task.id}
+                  className={clsx(
+                    "shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-medium",
+                    "text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+                  )}
+                >
+                  {busyId === task.id ? "…" : "복구"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }
