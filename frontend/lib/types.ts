@@ -41,6 +41,10 @@ export interface CalendarEvent {
   end_at: string;
   reminder_minutes_before: number | null;
   source: string;
+  // From an invited/shared Google calendar the user can only read — shown but not editable.
+  read_only?: boolean;
+  // "habit" marks a daily-routine block injected into the timetable (not a real event).
+  kind?: "event" | "habit";
 }
 
 export interface EventInput {

@@ -112,11 +112,28 @@ export function WeekTimetable({
                   </div>
                 )}
 
-                {/* events */}
+                {/* events (and injected daily-routine blocks) */}
                 {dayEvents.map((ev) => {
                   const top = topFor(ev.start_at);
                   const height = Math.max(topFor(ev.end_at) - top, 16);
                   if (top > totalHeight || top + height < 0) return null;
+
+                  if (ev.kind === "habit") {
+                    return (
+                      <div
+                        key={`h-${ev.id}`}
+                        title={`${ev.title} · 루틴 ${hhmm(ev.start_at)}`}
+                        className="absolute left-0.5 right-0.5 z-[5] rounded border-l-2 border-dashed bg-cat-habit/15 border-cat-habit px-1 py-0.5 overflow-hidden"
+                        style={{ top, height }}
+                      >
+                        <div className="text-[10px] font-medium text-text-primary truncate leading-tight">
+                          <span className="text-cat-habit">◌ </span>
+                          {ev.title}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <button
                       key={ev.id}

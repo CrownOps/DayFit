@@ -47,6 +47,7 @@ class EventOut(BaseModel):
     end_at: datetime
     reminder_minutes_before: int | None
     source: str
+    read_only: bool = False
 
     class Config:
         from_attributes = True

@@ -72,12 +72,32 @@ export function Timetable({
           </div>
         )}
 
-        {/* Events */}
+        {/* Events (and injected daily-routine blocks) */}
         {events.map((ev) => {
           const top = topFor(ev.start_at);
           const bottom = topFor(ev.end_at);
           const height = Math.max(bottom - top, 22);
           if (top > totalHeight || bottom < 0) return null;
+
+          // Daily-routine blocks are read-only markers, not editable events.
+          if (ev.kind === "habit") {
+            return (
+              <div
+                key={`h-${ev.id}`}
+                className="absolute left-16 right-2 z-[5] rounded-lg border-l-4 border-dashed px-2 py-1 overflow-hidden bg-cat-habit/10 border-cat-habit"
+                style={{ top, height }}
+              >
+                <div className="text-xs font-medium text-text-primary truncate">
+                  <span className="text-cat-habit">◌ </span>
+                  {ev.title}
+                </div>
+                <div className="text-[10px] font-mono text-text-secondary">
+                  {hhmm(ev.start_at)} · 루틴
+                </div>
+              </div>
+            );
+          }
+
           return (
             <button
               key={ev.id}
@@ -88,7 +108,10 @@ export function Timetable({
               )}
               style={{ top, height }}
             >
-              <div className="text-xs font-medium text-text-primary truncate">{ev.title}</div>
+              <div className="text-xs font-medium text-text-primary truncate">
+                {ev.title}
+                {ev.read_only ? <span className="text-text-tertiary"> · 초대됨</span> : ""}
+              </div>
               <div className="text-[10px] font-mono text-text-secondary">
                 {hhmm(ev.start_at)}–{hhmm(ev.end_at)}
                 {ev.location ? ` · ${ev.location}` : ""}

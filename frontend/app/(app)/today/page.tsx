@@ -24,6 +24,45 @@ import { clsx } from "@/lib/clsx";
 
 type ViewMode = "day" | "week" | "month";
 
+// Daily-routine blocks default to a 30-minute slot in the timetable.
+const HABIT_BLOCK_MINUTES = 30;
+
+/** Whether a habit is scheduled on the given day (empty repeat_days = every day). */
+function isHabitOnDay(h: Habit, d: Date): boolean {
+  if (!h.active) return false;
+  if (!h.repeat_days) return true;
+  const weekday = (d.getDay() + 6) % 7; // 0=Mon
+  return h.repeat_days.split(",").filter(Boolean).map(Number).includes(weekday);
+}
+
+/** Build read-only timetable blocks from scheduled habits across the given days. */
+function habitBlocksForDays(habits: Habit[], days: Date[]): CalendarEvent[] {
+  const blocks: CalendarEvent[] = [];
+  for (const d of days) {
+    for (const h of habits) {
+      if (!isHabitOnDay(h, d)) continue;
+      const [hh, mm] = h.target_time.split(":").map(Number);
+      const start = new Date(d);
+      start.setHours(hh || 0, mm || 0, 0, 0);
+      const end = new Date(start.getTime() + HABIT_BLOCK_MINUTES * 60000);
+      blocks.push({
+        // Synthetic, stable-per-day negative id (won't collide with real events).
+        id: -(h.id * 100 + d.getDate()),
+        google_event_id: null,
+        title: h.name,
+        description: null,
+        location: null,
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        reminder_minutes_before: null,
+        source: "habit",
+        kind: "habit",
+      });
+    }
+  }
+  return blocks;
+}
+
 export default function TodayPage() {
   const [date, setDate] = useState(() => startOfDay(new Date()));
   const [viewMode, setViewMode] = useState<ViewMode>("day");
@@ -104,12 +143,21 @@ export default function TodayPage() {
     }
   }
 
-  const scheduledToday = habits.filter((h) => {
-    if (!h.active) return false;
-    if (!h.repeat_days) return true;
-    const weekday = (date.getDay() + 6) % 7; // 0=Mon
-    return h.repeat_days.split(",").filter(Boolean).map(Number).includes(weekday);
-  });
+  const scheduledToday = habits.filter((h) => isHabitOnDay(h, date));
+
+  // Daily routines rendered inside the timetable as read-only blocks. Day view
+  // shows the selected day; week view shows every scheduled day. Month view is
+  // left to real events only.
+  const timetableEvents =
+    viewMode === "month"
+      ? events
+      : [
+          ...events,
+          ...habitBlocksForDays(
+            habits,
+            viewMode === "week" ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [date]
+          ),
+        ];
 
   return (
     <div className="space-y-6">
@@ -220,7 +268,7 @@ export default function TodayPage() {
             ) : viewMode === "week" ? (
               <WeekTimetable
                 weekStart={weekStart}
-                events={events}
+                events={timetableEvents}
                 onSelect={(ev) => {
                   setEditing(ev);
                   setModalOpen(true);
@@ -229,7 +277,7 @@ export default function TodayPage() {
             ) : (
               <Timetable
                 date={date}
-                events={events}
+                events={timetableEvents}
                 onSelect={(ev) => {
                   setEditing(ev);
                   setModalOpen(true);
@@ -366,45 +414,58 @@ function EventModal({
     }
   }
 
+  const readOnly = !!event?.read_only;
+
   return (
-    <Modal open={open} onClose={onClose} title={event ? "일정 수정" : "새 일정"}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={readOnly ? "일정 (읽기 전용)" : event ? "일정 수정" : "새 일정"}
+    >
       <form onSubmit={save} className="space-y-3">
+        {readOnly && (
+          <p className="rounded-lg border border-border bg-bg px-3 py-2 text-xs text-text-secondary">
+            초대된(공유) Google 캘린더의 일정이라 여기서는 수정·삭제할 수 없습니다.
+          </p>
+        )}
         <div>
           <Label htmlFor="ev-title">제목</Label>
-          <Input id="ev-title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <Input id="ev-title" value={title} onChange={(e) => setTitle(e.target.value)} required disabled={readOnly} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="ev-start">시작</Label>
-            <Input id="ev-start" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} required />
+            <Input id="ev-start" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} required disabled={readOnly} />
           </div>
           <div>
             <Label htmlFor="ev-end">종료</Label>
-            <Input id="ev-end" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required />
+            <Input id="ev-end" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required disabled={readOnly} />
           </div>
         </div>
         <div>
           <Label htmlFor="ev-loc">장소</Label>
-          <Input id="ev-loc" value={location} onChange={(e) => setLocation(e.target.value)} />
+          <Input id="ev-loc" value={location} onChange={(e) => setLocation(e.target.value)} disabled={readOnly} />
         </div>
         <div>
           <Label htmlFor="ev-desc">설명</Label>
-          <Textarea id="ev-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <Textarea id="ev-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} disabled={readOnly} />
         </div>
-        <div>
-          <Label htmlFor="ev-rem">알림 (분 전)</Label>
-          <Input
-            id="ev-rem"
-            type="number"
-            min={0}
-            value={reminder}
-            onChange={(e) => setReminder(e.target.value)}
-            placeholder="예: 10"
-          />
-        </div>
+        {!readOnly && (
+          <div>
+            <Label htmlFor="ev-rem">알림 (분 전)</Label>
+            <Input
+              id="ev-rem"
+              type="number"
+              min={0}
+              value={reminder}
+              onChange={(e) => setReminder(e.target.value)}
+              placeholder="예: 10"
+            />
+          </div>
+        )}
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="flex items-center justify-between pt-2">
-          {event ? (
+          {event && !readOnly ? (
             <Button type="button" variant="danger" onClick={remove} disabled={saving}>
               삭제
             </Button>
@@ -413,11 +474,13 @@ function EventModal({
           )}
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
-              취소
+              {readOnly ? "닫기" : "취소"}
             </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
-            </Button>
+            {!readOnly && (
+              <Button type="submit" disabled={saving}>
+                {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
+              </Button>
+            )}
           </div>
         </div>
       </form>

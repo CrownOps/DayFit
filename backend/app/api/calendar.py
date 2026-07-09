@@ -97,6 +97,8 @@ def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:
         start_at=start_at,
         end_at=end_at,
         source="google",
+        calendar_id=item.get("_calendarId", "primary"),
+        read_only=bool(item.get("_readOnly", False)),
     )
 
 
@@ -168,11 +170,13 @@ def update_event(
     row = db.get(CalendarEventCache, event_id)
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="Event not found")
+    if row.read_only:
+        raise HTTPException(status_code=403, detail="읽기 전용(초대된) 캘린더의 일정은 수정할 수 없습니다")
 
     fields = payload.model_dump(exclude_unset=True)
 
     if row.google_event_id and user.google_calendar_connected:
-        gcal.patch_event(user, db, row.google_event_id, **fields)
+        gcal.patch_event(user, db, row.google_event_id, calendar_id=row.calendar_id, **fields)
 
     for key, value in fields.items():
         setattr(row, key, value)
@@ -188,9 +192,11 @@ def delete_event(event_id: int, user: User = Depends(get_current_user), db: Sess
     row = db.get(CalendarEventCache, event_id)
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="Event not found")
+    if row.read_only:
+        raise HTTPException(status_code=403, detail="읽기 전용(초대된) 캘린더의 일정은 삭제할 수 없습니다")
 
     if row.google_event_id and user.google_calendar_connected:
-        gcal.delete_event(user, db, row.google_event_id)
+        gcal.delete_event(user, db, row.google_event_id, calendar_id=row.calendar_id)
 
     db.delete(row)
     db.commit()
