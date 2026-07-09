@@ -181,19 +181,48 @@ NO_REMINDERS = {"useDefault": False, "overrides": []}
 
 
 def list_events(user: User, db: Session, time_min: datetime, time_max: datetime) -> list[dict]:
+    """Events across every calendar the user has enabled — not just their own
+    primary calendar, but also invited/shared calendars they keep visible.
+
+    Each returned item is annotated with ``_calendarId`` (which calendar it came
+    from) and ``_readOnly`` (True when the user only has read access), so the
+    caller can route edits and mark invited events as non-editable.
+    """
     service = get_calendar_service(user, db)
-    result = (
-        service.events()
-        .list(
-            calendarId="primary",
-            timeMin=time_min.astimezone(timezone.utc).isoformat(),
-            timeMax=time_max.astimezone(timezone.utc).isoformat(),
-            singleEvents=True,
-            orderBy="startTime",
-        )
-        .execute()
-    )
-    return result.get("items", [])
+    time_min_iso = time_min.astimezone(timezone.utc).isoformat()
+    time_max_iso = time_max.astimezone(timezone.utc).isoformat()
+
+    calendars = service.calendarList().list().execute().get("items", [])
+    items: list[dict] = []
+    for cal in calendars:
+        # Respect the user's Google visibility choices: skip calendars they've
+        # hidden (holidays, week numbers, etc.). Primary is always included.
+        if not cal.get("primary") and not cal.get("selected"):
+            continue
+        cal_id = cal["id"]
+        access = cal.get("accessRole", "reader")
+        read_only = access in ("reader", "freeBusyReader")
+        try:
+            result = (
+                service.events()
+                .list(
+                    calendarId=cal_id,
+                    timeMin=time_min_iso,
+                    timeMax=time_max_iso,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+        except Exception:
+            # One inaccessible calendar shouldn't fail the whole request.
+            logger.warning("Failed to list events for calendar %s", cal_id, exc_info=True)
+            continue
+        for item in result.get("items", []):
+            item["_calendarId"] = cal_id
+            item["_readOnly"] = read_only
+            items.append(item)
+    return items
 
 
 def insert_event(user: User, db: Session, title: str, description: str | None, location: str | None,
@@ -210,7 +239,9 @@ def insert_event(user: User, db: Session, title: str, description: str | None, l
     return service.events().insert(calendarId="primary", body=body).execute()
 
 
-def patch_event(user: User, db: Session, google_event_id: str, **fields) -> dict:
+def patch_event(
+    user: User, db: Session, google_event_id: str, calendar_id: str = "primary", **fields
+) -> dict:
     service = get_calendar_service(user, db)
     body: dict = {"reminders": NO_REMINDERS}
     if "title" in fields and fields["title"] is not None:
@@ -223,12 +254,12 @@ def patch_event(user: User, db: Session, google_event_id: str, **fields) -> dict
         body["start"] = {"dateTime": fields["start_at"].isoformat()}
     if "end_at" in fields and fields["end_at"] is not None:
         body["end"] = {"dateTime": fields["end_at"].isoformat()}
-    return service.events().patch(calendarId="primary", eventId=google_event_id, body=body).execute()
+    return service.events().patch(calendarId=calendar_id, eventId=google_event_id, body=body).execute()
 
 
-def delete_event(user: User, db: Session, google_event_id: str) -> None:
+def delete_event(user: User, db: Session, google_event_id: str, calendar_id: str = "primary") -> None:
     service = get_calendar_service(user, db)
-    service.events().delete(calendarId="primary", eventId=google_event_id).execute()
+    service.events().delete(calendarId=calendar_id, eventId=google_event_id).execute()
 
 
 def disable_reminders_for_all_events(user: User, db: Session) -> int:

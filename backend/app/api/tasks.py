@@ -56,7 +56,10 @@ def list_tasks(
     else:
         query = query.filter(Task.user_id == user.id)
 
-    rows = query.order_by(Task.completed, Task.sort_order, Task.id).all()
+    # Order purely by manual position so newly added tasks (highest sort_order)
+    # stay pinned to the bottom and completed items keep their place instead of
+    # sinking below still-open ones.
+    rows = query.order_by(Task.sort_order, Task.id).all()
     return [_to_out(task, uid, uname) for task, uid, uname in rows]
 
 
