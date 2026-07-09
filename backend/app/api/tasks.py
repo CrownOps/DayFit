@@ -8,7 +8,16 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.task import Scope, TaskCreate, TaskOut, TaskOwner, TaskReorder, TaskUpdate, TaskView
+from app.schemas.task import (
+    Scope,
+    TaskCreate,
+    TaskOut,
+    TaskOwner,
+    TaskReorder,
+    TaskUpdate,
+    TaskView,
+    TeamTaskCreate,
+)
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -105,6 +114,96 @@ def reorder_tasks(
     for task in updated:
         db.refresh(task)
     return [_to_out(task, user.id, user.name) for task in updated]
+
+
+# ---- Team shared pool ("팀 할일") ----------------------------------------
+#
+# Pool tasks have no owner (user_id is NULL) and belong to a team. Any teammate
+# can add to the pool, claim an item (making it their own today-task), or remove
+# one. These routes are declared before "/{task_id}" so "team-pool" isn't parsed
+# as a task id.
+
+
+def _pool_out(task: Task) -> TaskOut:
+    """Serialize an unclaimed pool task (no owner)."""
+    out = TaskOut.model_validate(task)
+    out.owner = None
+    return out
+
+
+@router.get("/team-pool", response_model=list[TaskOut])
+def list_team_pool(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Unclaimed tasks in the current user's team pool."""
+    if not user.team_id:
+        return []
+    rows = (
+        db.query(Task)
+        .filter(Task.team_id == user.team_id, Task.user_id.is_(None))
+        .order_by(Task.sort_order, Task.id)
+        .all()
+    )
+    return [_pool_out(task) for task in rows]
+
+
+@router.post("/team-pool", response_model=TaskOut)
+def create_team_task(
+    payload: TeamTaskCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    if not user.team_id:
+        raise HTTPException(status_code=400, detail="팀에 소속되어 있어야 팀 할일을 추가할 수 있습니다")
+    max_order = (
+        db.query(func.coalesce(func.max(Task.sort_order), 0))
+        .filter(Task.team_id == user.team_id, Task.user_id.is_(None))
+        .scalar()
+    )
+    task = Task(
+        user_id=None,
+        team_id=user.team_id,
+        title=payload.title,
+        scope="team",
+        anchor_date=date.today(),
+        sort_order=(max_order or 0) + 1,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return _pool_out(task)
+
+
+@router.post("/team-pool/{task_id}/claim", response_model=TaskOut)
+def claim_team_task(
+    task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Take an unclaimed pool item as a personal today-task."""
+    task = db.get(Task, task_id)
+    if task is None or task.user_id is not None or task.team_id != user.team_id or not user.team_id:
+        raise HTTPException(status_code=404, detail="Team task not found")
+    today = date.today()
+    max_order = (
+        db.query(func.coalesce(func.max(Task.sort_order), 0))
+        .filter(Task.user_id == user.id, Task.scope == "today", Task.anchor_date == today)
+        .scalar()
+    )
+    task.user_id = user.id
+    task.team_id = None
+    task.scope = "today"
+    task.anchor_date = today
+    task.sort_order = (max_order or 0) + 1
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return _to_out(task, user.id, user.name)
+
+
+@router.delete("/team-pool/{task_id}", status_code=204)
+def delete_team_task(
+    task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    task = db.get(Task, task_id)
+    if task is None or task.user_id is not None or task.team_id != user.team_id or not user.team_id:
+        raise HTTPException(status_code=404, detail="Team task not found")
+    db.delete(task)
+    db.commit()
 
 
 @router.patch("/{task_id}", response_model=TaskOut)

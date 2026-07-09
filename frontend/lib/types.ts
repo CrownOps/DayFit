@@ -140,7 +140,8 @@ export type TaskView = "own" | "team";
 export interface Task {
   id: number;
   title: string;
-  scope: TaskScope;
+  // "team" marks an unclaimed shared-pool item; the board only handles today/week.
+  scope: TaskScope | "team";
   anchor_date: string;
   status: TaskStatus;
   completed: boolean;

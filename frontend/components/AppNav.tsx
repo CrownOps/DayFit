@@ -15,7 +15,7 @@ interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/home", label: "홈", icon: "⌂" },
   { href: "/today", label: "일정", icon: "◷" },
-  { href: "/tasks", label: "할일", icon: "☑" },
+  { href: "/tasks", label: "할 일", icon: "☑" },
   { href: "/bottlenecks", label: "병목", icon: "⚠" },
   { href: "/habits", label: "데일리 루틴", icon: "✓" },
   { href: "/reading", label: "독서", icon: "❑" },

@@ -7,6 +7,7 @@ import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, Spinner, Textarea } from "@/components/ui";
 import { Heatmap, aiScoreLevel, type HeatCell } from "@/components/Heatmap";
+import { SnippetTasks } from "@/components/SnippetTasks";
 import { clsx } from "@/lib/clsx";
 import { SNIPPET_TEMPLATE } from "@/lib/snippetTemplate";
 
@@ -110,6 +111,15 @@ export default function SnippetsPage() {
     }
     return map;
   }, [snippets, scope]);
+
+  // Append task text pulled from the "내 할 일 참고" panel to the draft, keeping a
+  // clean newline boundary so inserted bullets don't run into existing text.
+  function insertIntoDraft(text: string) {
+    setDraft((prev) => {
+      if (!prev.trim()) return text;
+      return prev.replace(/\n*$/, "\n") + text;
+    });
+  }
 
   async function saveDraft() {
     setSaving(true);
@@ -224,6 +234,8 @@ export default function SnippetsPage() {
               템플릿 넣기
             </button>
           </div>
+          <SnippetTasks onInsert={insertIntoDraft} />
+
           <Textarea
             rows={14}
             value={draft}
