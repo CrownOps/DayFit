@@ -97,7 +97,7 @@ export const tasksApi = {
   // in `scope` is moved into it. Returns the updated tasks for that column.
   reorder: (scope: TaskScope, ids: number[]) =>
     api<Task[]>("/api/tasks/reorder", { method: "PUT", body: { scope, ids } }),
-  // ---- Team shared pool ("팀 할일") ----
+  // ---- Team shared pool ("팀 할 일") ----
   // Unclaimed tasks owned by no one; any teammate can claim one into their own list.
   teamPool: () => api<Task[]>("/api/tasks/team-pool"),
   createTeamTask: (title: string) =>

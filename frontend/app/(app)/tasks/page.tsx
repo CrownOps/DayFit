@@ -10,14 +10,14 @@ import { clsx } from "@/lib/clsx";
 type View = "own" | "pool" | "team";
 
 const VIEWS: { value: View; label: string }[] = [
+  { value: "pool", label: "팀 할 일" },
   { value: "own", label: "내 할 일" },
-  { value: "pool", label: "팀 할일" },
   { value: "team", label: "팀 현황" },
 ];
 
 export default function TasksPage() {
   const now = new Date();
-  const [view, setView] = useState<View>("own");
+  const [view, setView] = useState<View>("pool");
 
   return (
     <div className="space-y-6">

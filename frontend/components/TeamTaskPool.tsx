@@ -8,7 +8,7 @@ import { Card, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 
 /**
- * Shared team backlog ("팀 할일"). Anyone on the team can add an item to the pool,
+ * Shared team backlog ("팀 할 일"). Anyone on the team can add an item to the pool,
  * and any teammate can "가져가기" (claim) one — which removes it from the pool and
  * drops it into that person's own 오늘 할 일 list.
  */
@@ -72,7 +72,7 @@ export function TeamTaskPool() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-accent-secondary" />
-            <h2 className="text-sm font-semibold text-text-primary">팀 할일 (가져가기)</h2>
+            <h2 className="text-sm font-semibold text-text-primary">팀 할 일 (가져가기)</h2>
           </div>
           {tasks.length > 0 && (
             <span className="text-xs font-mono text-text-tertiary">{tasks.length}개</span>
@@ -90,7 +90,7 @@ export function TeamTaskPool() {
           <ul className="space-y-1.5">
             {tasks.length === 0 && (
               <li className="text-sm text-text-tertiary py-1">
-                공유된 팀 할일이 없습니다. 아래에서 추가해 보세요.
+                공유된 팀 할 일이 없습니다. 아래에서 추가해 보세요.
               </li>
             )}
             {tasks.map((task) => (
@@ -153,7 +153,7 @@ function AddForm({ onAdd }: { onAdd: (title: string) => void }) {
       <input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="+ 팀 할일 추가"
+        placeholder="+ 팀 할 일 추가"
         className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent outline-none"
       />
       <button
