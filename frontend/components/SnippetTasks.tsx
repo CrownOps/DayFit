@@ -112,7 +112,7 @@ function TaskGroup({
             </span>
             <button
               type="button"
-              onClick={() => onInsert(`- ${t.title}\n`)}
+              onClick={() => onInsert(bulletFor(t))}
               className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-text-secondary hover:border-accent hover:text-accent transition-colors opacity-0 group-hover:opacity-100"
             >
               삽입
@@ -124,15 +124,14 @@ function TaskGroup({
   );
 }
 
+// A single "오늘 한 일" bullet for a task; in-progress items are tagged so they
+// read correctly once merged into the completed-work list.
+function bulletFor(t: Task): string {
+  return `- ${t.title}${t.status === "in_progress" ? " (진행 중)" : ""}\n`;
+}
+
+// "전체 삽입": completed work first, then still-in-progress items, all as bullets
+// for the "오늘 한 일" section (no sub-headings).
 function formatAll(done: Task[], inProgress: Task[]): string {
-  const lines: string[] = [];
-  if (inProgress.length > 0) {
-    lines.push("### 진행 중");
-    for (const t of inProgress) lines.push(`- ${t.title}`);
-  }
-  if (done.length > 0) {
-    lines.push("### 완료");
-    for (const t of done) lines.push(`- ${t.title}`);
-  }
-  return lines.join("\n") + "\n";
+  return [...done, ...inProgress].map(bulletFor).join("");
 }

@@ -11,6 +11,38 @@ import { SnippetTasks } from "@/components/SnippetTasks";
 import { clsx } from "@/lib/clsx";
 import { SNIPPET_TEMPLATE } from "@/lib/snippetTemplate";
 
+// The snippet template's first section — tasks pulled from the "내 할 일 참고"
+// panel are dropped in here ("오늘 한 일" = what I did today).
+const TODAY_HEADING = SNIPPET_TEMPLATE.split("\n")[0]; // "#### 오늘 한 일"
+
+/**
+ * Insert bullet lines under the "오늘 한 일" heading of a snippet draft, appending
+ * after any content already in that section and dropping the empty "-" placeholder.
+ * If the heading is missing (template cleared), fall back to appending at the end.
+ */
+function insertUnderTodayHeading(draft: string, text: string): string {
+  const insertLines = text.replace(/\n+$/, "").split("\n");
+  const lines = draft.split("\n");
+  const h = lines.findIndex((l) => l.trim() === TODAY_HEADING);
+  if (h === -1) {
+    const base = draft.trim() ? draft.replace(/\n*$/, "\n") : "";
+    return base + insertLines.join("\n") + "\n";
+  }
+  // Section body runs from just after the heading to the next "#### " heading (or EOF).
+  let e = lines.length;
+  for (let i = h + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("#### ")) {
+      e = i;
+      break;
+    }
+  }
+  const body = lines.slice(h + 1, e);
+  // Keep existing bullets, but drop blank lines and the lone "-" placeholder.
+  const content = body.filter((l) => l.trim() !== "" && l.trim() !== "-");
+  const rebuilt = [TODAY_HEADING, "", ...content, ...insertLines, ""];
+  return [...lines.slice(0, h), ...rebuilt, ...lines.slice(e)].join("\n");
+}
+
 export default function SnippetsPage() {
   const [scope, setScope] = useState<"own" | "team">("own");
   const [snippets, setSnippets] = useState<Snippet[]>([]);
@@ -112,13 +144,9 @@ export default function SnippetsPage() {
     return map;
   }, [snippets, scope]);
 
-  // Append task text pulled from the "내 할 일 참고" panel to the draft, keeping a
-  // clean newline boundary so inserted bullets don't run into existing text.
+  // Drop task text pulled from the "내 할 일 참고" panel into the "오늘 한 일" section.
   function insertIntoDraft(text: string) {
-    setDraft((prev) => {
-      if (!prev.trim()) return text;
-      return prev.replace(/\n*$/, "\n") + text;
-    });
+    setDraft((prev) => insertUnderTodayHeading(prev, text));
   }
 
   async function saveDraft() {
