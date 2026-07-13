@@ -29,6 +29,23 @@ def _anchor_for(scope: str) -> date:
     return today
 
 
+def _rollover_today_tasks(db: Session, user: User) -> None:
+    """Carry unfinished "today" tasks forward to today so they don't vanish when
+    the day rolls over; completed tasks are left on their original day."""
+    today = date.today()
+    (
+        db.query(Task)
+        .filter(
+            Task.user_id == user.id,
+            Task.scope == "today",
+            Task.anchor_date < today,
+            Task.status != "done",
+        )
+        .update({Task.anchor_date: today}, synchronize_session=False)
+    )
+    db.commit()
+
+
 def _get_owned(db: Session, task_id: int, user: User) -> Task:
     task = db.get(Task, task_id)
     if task is None or task.user_id != user.id:
@@ -55,6 +72,9 @@ def list_tasks(
     view=team -> every teammate's tasks for the same period, each with its owner
                  (read-only view for sharing progress).
     """
+    if scope == "today":
+        _rollover_today_tasks(db, user)
+
     anchor = _anchor_for(scope)
     query = db.query(Task, User.id, User.name).join(User, Task.user_id == User.id)
     query = query.filter(Task.scope == scope, Task.anchor_date == anchor)
