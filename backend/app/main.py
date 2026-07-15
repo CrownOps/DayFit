@@ -13,6 +13,7 @@ from app.api import (
     calendar,
     habits,
     integrations,
+    meeting_rooms,
     push,
     snippets,
     tasks,
@@ -70,6 +71,7 @@ app.include_router(bottlenecks.router)
 app.include_router(calendar.router)
 app.include_router(habits.router)
 app.include_router(integrations.router)
+app.include_router(meeting_rooms.router)
 app.include_router(push.router)
 app.include_router(snippets.router)
 app.include_router(tasks.router)

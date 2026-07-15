@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/resources";
 import type { Task, TaskScope } from "@/lib/types";
 import { ApiError } from "@/lib/api";
-import { Card, Spinner } from "@/components/ui";
+import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 import { STATUS_META, StatusToggle, nextStatus } from "@/components/TaskStatus";
 
@@ -158,7 +158,7 @@ export function TaskBoard() {
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
       <div className="grid gap-4 md:grid-cols-2">
         {COLUMNS.map((col) => (
           <Column
@@ -378,6 +378,14 @@ function TaskRow({
         ⠿
       </span>
       <StatusToggle status={task.status} onClick={onCycle} />
+      {task.claimed_at && (
+        <span
+          title={`${new Date(task.claimed_at).toLocaleString("ko-KR")}에 팀 할일에서 가져옴`}
+          className="shrink-0 rounded-full bg-accent-secondary/15 text-accent-secondary border border-accent-secondary/40 px-1.5 py-0.5 text-[10px] font-medium"
+        >
+          팀
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus

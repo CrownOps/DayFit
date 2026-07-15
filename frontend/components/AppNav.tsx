@@ -22,7 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/snippets", label: "스니펫", icon: "▦" },
   { href: "/team", label: "헬스체크", icon: "◍" },
   { href: "/team-space", label: "팀룰", icon: "⚑" },
-  { href: "/tokens", label: "토큰", icon: "∑" },
+  { href: "/rooms", label: "회의실", icon: "▣" },
   { href: "/admin", label: "관리자", icon: "★", adminOnly: true },
   { href: "/settings", label: "설정", icon: "⚙" },
 ];

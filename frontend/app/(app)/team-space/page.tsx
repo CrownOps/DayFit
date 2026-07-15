@@ -5,7 +5,7 @@ import { teamSpaceApi } from "@/lib/resources";
 import type { TeamProfile, TeamRule } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Button, Card, Input, Label, Spinner, Textarea } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 
 export default function TeamSpacePage() {
@@ -58,7 +58,7 @@ export default function TeamSpacePage() {
         )}
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {/* Vision & mission */}
       <section className="grid gap-4 sm:grid-cols-2">
@@ -297,7 +297,7 @@ function ProfileModal({
             placeholder="비전을 이루기 위해 우리가 하는 일"
           />
         </div>
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorAlert>{error}</ErrorAlert>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             취소

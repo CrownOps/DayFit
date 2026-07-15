@@ -20,6 +20,36 @@ export class ApiError extends Error {
   }
 }
 
+/** Pydantic v2 prefixes a validator's raised `ValueError` message with a
+ * literal "Value error, " — drop that boilerplate so a Korean message reads
+ * cleanly instead of "Value error, 종료 시간은 ...". */
+function stripPydanticPrefix(msg: string): string {
+  return msg.replace(/^value error,\s*/i, "");
+}
+
+/** FastAPI 422s send `detail` as a list of Pydantic error objects; other
+ * errors send a plain string. Reduce either shape to a human-readable message
+ * instead of dumping raw JSON in the UI. */
+function extractErrorMessage(detail: unknown): string | null {
+  if (detail == null) return null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => (item && typeof item === "object" && typeof (item as { msg?: unknown }).msg === "string"
+        ? stripPydanticPrefix((item as { msg: string }).msg)
+        : null))
+      .filter((m): m is string => !!m);
+    if (messages.length) return messages.join(" ");
+  } else if (typeof detail === "object" && typeof (detail as { msg?: unknown }).msg === "string") {
+    return stripPydanticPrefix((detail as { msg: string }).msg);
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return null;
+  }
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -59,7 +89,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     let detail = res.statusText;
     try {
       const data = await res.json();
-      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      detail = extractErrorMessage(data.detail) ?? detail;
     } catch {
       /* keep statusText */
     }

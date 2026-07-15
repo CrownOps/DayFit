@@ -9,13 +9,14 @@ import type {
   BottleneckInput,
   CalendarEvent,
   EventInput,
-  GcsPulseQuota,
   MyGoogleIntegration,
   Habit,
   HabitLog,
   HabitStats,
   HeatmapDay,
   InviteCode,
+  MeetingRoom,
+  MeetingRoomReservation,
   PushSubscriptionRow,
   Snippet,
   Task,
@@ -25,7 +26,6 @@ import type {
   TeamHealthEntry,
   TeamProfile,
   TeamRule,
-  TokenUsageLog,
 } from "./types";
 
 // ---- Calendar ----
@@ -90,8 +90,10 @@ export const tasksApi = {
     api<Task[]>("/api/tasks", { query: { scope, view } }),
   create: (title: string, scope: TaskScope) =>
     api<Task>("/api/tasks", { method: "POST", body: { title, scope } }),
-  update: (id: number, body: { title?: string; status?: TaskStatus; completed?: boolean }) =>
-    api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
+  update: (
+    id: number,
+    body: { title?: string; status?: TaskStatus; completed?: boolean; scope?: TaskScope }
+  ) => api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/tasks/${id}`, { method: "DELETE" }),
   // Move/reorder: `ids` is the target column's full order; any task not already
   // in `scope` is moved into it. Returns the updated tasks for that column.
@@ -149,14 +151,15 @@ export const teamSpaceApi = {
   removeRule: (id: number) => api<void>(`/api/team/rules/${id}`, { method: "DELETE" }),
 };
 
-// ---- Token usage ----
-export const tokenApi = {
-  quota: () => api<GcsPulseQuota>("/api/token-usage/gcs-pulse-quota"),
-  list: (scope: "own" | "team", from_date?: string, to_date?: string) =>
-    api<TokenUsageLog[]>("/api/token-usage", { query: { scope, from_date, to_date } }),
-  addManual: (body: { date: string; model: string; input_tokens: number; output_tokens: number }) =>
-    api<TokenUsageLog>("/api/token-usage/manual", { method: "POST", body }),
-  removeManual: (id: number) => api<void>(`/api/token-usage/manual/${id}`, { method: "DELETE" }),
+// ---- Meeting rooms (GCS Pulse) ----
+export const meetingRoomsApi = {
+  list: () => api<MeetingRoom[]>("/api/meeting-rooms"),
+  reservations: (roomId: number, date: string) =>
+    api<MeetingRoomReservation[]>(`/api/meeting-rooms/${roomId}/reservations`, { query: { date } }),
+  reserve: (roomId: number, body: { start_at: string; end_at: string; purpose?: string | null }) =>
+    api<MeetingRoomReservation>(`/api/meeting-rooms/${roomId}/reservations`, { method: "POST", body }),
+  cancel: (reservationId: number) =>
+    api<{ message: string }>(`/api/meeting-rooms/reservations/${reservationId}`, { method: "DELETE" }),
 };
 
 // ---- Push ----

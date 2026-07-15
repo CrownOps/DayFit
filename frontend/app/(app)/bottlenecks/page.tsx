@@ -11,7 +11,7 @@ import type {
 } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Badge, Button, Card, Input, Label, Spinner, Textarea } from "@/components/ui";
+import { Badge, Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 
 // ---- Label / colour maps ----
@@ -107,7 +107,7 @@ export default function BottlenecksPage() {
         <Button onClick={() => setCreating((v) => !v)}>{creating ? "닫기" : "+ 새 병목"}</Button>
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {creating && (
         <Card>
@@ -271,7 +271,7 @@ function BottleneckForm({
           />
         </div>
       </div>
-      {err && <p className="text-sm text-danger">{err}</p>}
+      <ErrorAlert>{err}</ErrorAlert>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel}>
           취소

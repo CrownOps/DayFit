@@ -5,7 +5,7 @@ import { snippetsApi } from "@/lib/resources";
 import type { Snippet } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Spinner, Textarea } from "@/components/ui";
+import { Button, Card, ErrorAlert, Spinner, Textarea } from "@/components/ui";
 import { Heatmap, aiScoreLevel, type HeatCell } from "@/components/Heatmap";
 import { SnippetTasks } from "@/components/SnippetTasks";
 import { clsx } from "@/lib/clsx";
@@ -217,7 +217,7 @@ export default function SnippetsPage() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {/* Write box (own scope only) */}
       {scope === "own" && (

@@ -108,23 +108,23 @@ export interface TeamHealthEntry {
   content_preview: string | null;
 }
 
-export interface GcsPulseQuota {
-  allocated: number;
-  used: number;
-  remaining: number;
-  last_reset: string;
-  next_reset: string;
+export interface MeetingRoom {
+  id: number;
+  name: string;
+  location: string | null;
+  description: string | null;
+  image_url: string | null;
 }
 
-export interface TokenUsageLog {
+export interface MeetingRoomReservation {
   id: number;
-  user_id: number;
-  date: string;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
-  estimated_cost_usd: number;
-  source: string;
+  meeting_room_id: number;
+  reserved_by_user_id: number;
+  reserved_by_name: string | null;
+  start_at: string;
+  end_at: string;
+  purpose: string | null;
+  can_cancel: boolean;
 }
 
 export interface PushSubscriptionRow {
@@ -146,6 +146,8 @@ export interface Task {
   status: TaskStatus;
   completed: boolean;
   sort_order: number;
+  // Set if this task was claimed from a team pool item.
+  claimed_at: string | null;
   owner: { id: number; name: string } | null;
 }
 

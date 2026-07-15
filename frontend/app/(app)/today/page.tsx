@@ -14,7 +14,7 @@ import {
   startOfWeek,
 } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner, Textarea } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
 import { Timetable } from "@/components/Timetable";
 import { WeekTimetable } from "@/components/WeekTimetable";
 import { MonthCalendar } from "@/components/MonthCalendar";
@@ -231,7 +231,7 @@ export default function TodayPage() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {loading ? (
         <div className="grid place-items-center py-16">
@@ -463,7 +463,7 @@ function EventModal({
             />
           </div>
         )}
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorAlert>{error}</ErrorAlert>
         <div className="flex items-center justify-between pt-2">
           {event && !readOnly ? (
             <Button type="button" variant="danger" onClick={remove} disabled={saving}>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { FullLogo } from "@/components/Logo";
 
 export default function LoginPage() {
@@ -65,7 +65,7 @@ export default function LoginPage() {
                 required
               />
             </div>
-            {error && <p className="text-sm text-danger">{error}</p>}
+            <ErrorAlert>{error}</ErrorAlert>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "로그인"}
             </Button>

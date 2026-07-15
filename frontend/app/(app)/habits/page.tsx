@@ -5,7 +5,7 @@ import { habitsApi } from "@/lib/resources";
 import type { Habit, HabitLog, HabitStats } from "@/lib/types";
 import { addDays, isoDate, timeLabel, WEEKDAY_LABELS } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { Heatmap, type HeatCell } from "@/components/Heatmap";
 import { clsx } from "@/lib/clsx";
@@ -134,7 +134,7 @@ export default function HabitsPage() {
         </Button>
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {/* Category filter */}
       {categories.length > 0 && (
@@ -419,7 +419,7 @@ function HabitModal({
             활성
           </label>
         )}
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorAlert>{error}</ErrorAlert>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             취소
