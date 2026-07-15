@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { usersApi } from "@/lib/resources";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { FullLogo } from "@/components/Logo";
 
 export default function OnboardingPage() {
@@ -98,7 +98,7 @@ export default function OnboardingPage() {
               </p>
             </div>
 
-            {error && <p className="text-sm text-danger">{error}</p>}
+            <ErrorAlert>{error}</ErrorAlert>
 
             <div className="flex items-center justify-between pt-1">
               <button

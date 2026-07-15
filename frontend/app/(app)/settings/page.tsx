@@ -6,7 +6,7 @@ import { calendarApi, integrationsApi, pushApi, usersApi } from "@/lib/resources
 import type { MyGoogleIntegration, PushSubscriptionRow } from "@/lib/types";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import {
@@ -141,7 +141,7 @@ function PushSection() {
               <div>등록된 기기 {devices.length}대</div>
             </div>
           )}
-          {error && <p className="text-sm text-danger">{error}</p>}
+          <ErrorAlert>{error}</ErrorAlert>
         </>
       )}
     </Card>
@@ -199,7 +199,7 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
           </Button>
         </>
       )}
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
     </Card>
   );
 }
@@ -294,7 +294,7 @@ function GoogleClientSection() {
         {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "저장"}
       </Button>
       {msg && <p className="text-sm text-text-secondary">{msg}</p>}
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
     </Card>
   );
 }

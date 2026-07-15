@@ -5,7 +5,7 @@ import { snippetsApi, teamApi } from "@/lib/resources";
 import type { Snippet, TeamHealthEntry } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
-import { Card, Spinner } from "@/components/ui";
+import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { ConditionTrend, type TrendPoint } from "@/components/ConditionTrend";
 import { clsx } from "@/lib/clsx";
 
@@ -115,7 +115,7 @@ export default function TeamPage() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {loading ? (
         <div className="grid place-items-center py-16">

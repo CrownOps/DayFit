@@ -5,10 +5,10 @@ import { koreanDate } from "@/lib/dates";
 import { TaskBoard } from "@/components/TaskBoard";
 import {
   HabitsWidget,
+  RoomsWidget,
   ScheduleWidget,
   SnippetWidget,
   TeamConditionWidget,
-  TokenWidget,
   VisionWidget,
 } from "@/components/DashboardWidgets";
 
@@ -39,7 +39,7 @@ export default function HomePage() {
         <HabitsWidget />
         <SnippetWidget />
         <TeamConditionWidget />
-        <TokenWidget />
+        <RoomsWidget />
       </section>
     </div>
   );

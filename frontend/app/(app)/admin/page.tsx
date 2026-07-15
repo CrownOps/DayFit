@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { inviteApi } from "@/lib/resources";
 import type { InviteCode } from "@/lib/types";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Label, Spinner } from "@/components/ui";
+import { Button, Card, ErrorAlert, Label, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 
 export default function AdminPage() {
@@ -111,7 +111,7 @@ export default function AdminPage() {
           </Button>
         </div>
         <p className="text-xs text-text-tertiary">0을 입력하면 만료되지 않는 코드가 발급됩니다.</p>
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorAlert>{error}</ErrorAlert>
       </Card>
 
       {/* Unused codes */}

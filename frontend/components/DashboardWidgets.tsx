@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { calendarApi, habitsApi, snippetsApi, teamApi, teamSpaceApi, tokenApi } from "@/lib/resources";
+import { calendarApi, habitsApi, meetingRoomsApi, snippetsApi, teamApi, teamSpaceApi } from "@/lib/resources";
 import type { CalendarEvent, TeamProfile } from "@/lib/types";
 import { addDays, endOfDay, hhmm, isoDate, startOfDay } from "@/lib/dates";
 import { Card, Spinner } from "@/components/ui";
@@ -246,38 +246,65 @@ export function TeamConditionWidget() {
   );
 }
 
-/** GCS Pulse token quota gauge. */
-export function TokenWidget() {
-  const [q, setQ] = useState<{ used: number; allocated: number } | null | undefined>(undefined);
+/** Next upcoming meeting-room reservation today (across all rooms). */
+export function RoomsWidget() {
+  const [state, setState] = useState<
+    { count: number; next: { room: string; start_at: string; end_at: string; purpose: string | null } | null }
+    | null
+    | undefined
+  >(undefined);
 
   useEffect(() => {
-    tokenApi
-      .quota()
-      .then((quota) => setQ({ used: quota.used, allocated: quota.allocated }))
-      .catch(() => setQ(null));
+    let cancelled = false;
+    async function load() {
+      try {
+        const rooms = await meetingRoomsApi.list();
+        const today = isoDate(new Date());
+        const lists = await Promise.all(
+          rooms.map((room) =>
+            meetingRoomsApi
+              .reservations(room.id, today)
+              .then((list) => list.map((r) => ({ ...r, roomName: room.name })))
+              .catch(() => [])
+          )
+        );
+        const now = new Date();
+        const all = lists.flat();
+        const next = all
+          .filter((r) => new Date(r.end_at) > now)
+          .sort((a, b) => a.start_at.localeCompare(b.start_at))[0];
+        if (cancelled) return;
+        setState({
+          count: all.length,
+          next: next
+            ? { room: next.roomName, start_at: next.start_at, end_at: next.end_at, purpose: next.purpose }
+            : null,
+        });
+      } catch {
+        if (!cancelled) setState(null);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const pct = q && q.allocated > 0 ? Math.min(100, (q.used / q.allocated) * 100) : 0;
-  const color = pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-success";
-
   return (
-    <WidgetShell title="토큰 쿼터" href="/tokens">
-      {q === undefined ? (
+    <WidgetShell title="회의실 예약" href="/rooms">
+      {state === undefined ? (
         <Spinner className="h-5 w-5" />
-      ) : q === null ? (
-        <p className="text-sm text-text-tertiary">토큰 쿼터를 불러올 수 없습니다.</p>
+      ) : state === null ? (
+        <p className="text-sm text-text-tertiary">회의실 정보를 불러올 수 없습니다.</p>
+      ) : state.next ? (
+        <div className="space-y-1">
+          <div className="text-xs font-mono text-text-secondary">
+            {hhmm(state.next.start_at)}–{hhmm(state.next.end_at)} · {state.next.room}
+          </div>
+          <div className="truncate text-sm text-text-primary">{state.next.purpose || "제목 없음"}</div>
+        </div>
       ) : (
-        <>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-secondary font-mono text-xs">
-              {q.used.toLocaleString()}/{q.allocated.toLocaleString()}
-            </span>
-            <span className="font-mono text-text-primary">{Math.round(pct)}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-border overflow-hidden">
-            <div className={clsx("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
-          </div>
-        </>
+        <p className="text-sm text-text-tertiary">오늘 예정된 회의실 예약이 없습니다.</p>
       )}
     </WidgetShell>
   );

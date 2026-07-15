@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { tasksApi } from "@/lib/resources";
 import type { Task } from "@/lib/types";
 import { ApiError } from "@/lib/api";
-import { Card, Spinner } from "@/components/ui";
+import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 
 /**
@@ -67,7 +67,7 @@ export function TeamTaskPool() {
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
       <Card className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

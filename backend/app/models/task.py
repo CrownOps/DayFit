@@ -35,4 +35,8 @@ class Task(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Set when this task was claimed from a team pool item; NULL for tasks
+    # created directly. A record of *when* it was picked up, not just that it was.
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { booksApi } from "@/lib/resources";
 import type { Book, BookScope, BookStatus } from "@/lib/types";
 import { ApiError } from "@/lib/api";
-import { Button, Card, Input, Label, Spinner, Textarea } from "@/components/ui";
+import { Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { clsx } from "@/lib/clsx";
 
@@ -121,7 +121,7 @@ export default function ReadingPage() {
         ))}
       </div>
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
 
       {/* Summary */}
       <section className="grid grid-cols-3 gap-3">
@@ -385,7 +385,7 @@ function BookModal({
             placeholder="왜 추천하는지, 어떤 점이 좋았는지 기록해보세요."
           />
         </div>
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorAlert>{error}</ErrorAlert>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             취소

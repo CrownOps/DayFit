@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { tasksApi } from "@/lib/resources";
 import type { Task } from "@/lib/types";
 import { ApiError } from "@/lib/api";
-import { Card, Spinner } from "@/components/ui";
+import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { StatusBadge } from "@/components/TaskStatus";
 
 interface MemberTasks {
@@ -70,7 +70,7 @@ export function TeamTasks() {
     );
   }
 
-  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (error) return <ErrorAlert>{error}</ErrorAlert>;
 
   if (members.length === 0) {
     return (

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -209,6 +209,7 @@ def claim_team_task(
     task.scope = "today"
     task.anchor_date = today
     task.sort_order = (max_order or 0) + 1
+    task.claimed_at = datetime.now(timezone.utc)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -240,6 +241,16 @@ def update_task(
     elif payload.completed is not None:
         task.completed = payload.completed
         task.status = "done" if payload.completed else "todo"
+    if payload.scope is not None and payload.scope != task.scope:
+        anchor = _anchor_for(payload.scope)
+        max_order = (
+            db.query(func.coalesce(func.max(Task.sort_order), 0))
+            .filter(Task.user_id == user.id, Task.scope == payload.scope, Task.anchor_date == anchor)
+            .scalar()
+        )
+        task.scope = payload.scope
+        task.anchor_date = anchor
+        task.sort_order = (max_order or 0) + 1
     db.add(task)
     db.commit()
     db.refresh(task)

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,9 @@ class TaskUpdate(BaseModel):
     status: Optional[TaskStatus] = None
     # Legacy toggle; still accepted and mapped to `status`.
     completed: Optional[bool] = None
+    # Move the task into "today"/"week" (recomputes anchor_date); e.g. promoting
+    # a "week" task to "today" when it's referenced from the daily snippet.
+    scope: Optional[Scope] = None
 
 
 class TaskReorder(BaseModel):
@@ -46,6 +49,8 @@ class TaskOut(BaseModel):
     status: TaskStatus
     completed: bool
     sort_order: int
+    # Set if this task was claimed from a team pool item.
+    claimed_at: Optional[datetime] = None
     owner: Optional[TaskOwner] = None
 
 

@@ -26,7 +26,17 @@ def _client(user: User, timeout: float = 15.0) -> httpx.Client:
 
 def _raise_for_status(resp: httpx.Response) -> None:
     if resp.status_code >= 400:
-        raise GcsPulseError(resp.status_code, resp.text)
+        # GCS Pulse is itself a FastAPI service, so its error bodies are
+        # usually `{"detail": "..."}`; unwrap that instead of forwarding raw
+        # JSON text as the error message.
+        detail = resp.text
+        try:
+            body = resp.json()
+            if isinstance(body, dict) and isinstance(body.get("detail"), str):
+                detail = body["detail"]
+        except ValueError:
+            pass
+        raise GcsPulseError(resp.status_code, detail)
 
 
 def list_daily_snippets(
@@ -109,5 +119,36 @@ def create_comment(user: User, daily_snippet_id: int, content: str) -> dict:
 def get_token_usage(user: User) -> dict:
     with _client(user) as client:
         resp = client.get("/users/me/token-usage")
+        _raise_for_status(resp)
+        return resp.json()
+
+
+def list_meeting_rooms(user: User) -> list[dict]:
+    with _client(user) as client:
+        resp = client.get("/meeting-rooms")
+        _raise_for_status(resp)
+        return resp.json()
+
+
+def list_room_reservations(user: User, room_id: int, date: str) -> list[dict]:
+    with _client(user) as client:
+        resp = client.get(f"/meeting-rooms/{room_id}/reservations", params={"date": date})
+        _raise_for_status(resp)
+        return resp.json()
+
+
+def create_room_reservation(user: User, room_id: int, start_at: str, end_at: str, purpose: str | None) -> dict:
+    with _client(user) as client:
+        resp = client.post(
+            f"/meeting-rooms/{room_id}/reservations",
+            json={"start_at": start_at, "end_at": end_at, "purpose": purpose},
+        )
+        _raise_for_status(resp)
+        return resp.json()
+
+
+def cancel_room_reservation(user: User, reservation_id: int) -> dict:
+    with _client(user) as client:
+        resp = client.delete(f"/meeting-rooms/reservations/{reservation_id}")
         _raise_for_status(resp)
         return resp.json()
