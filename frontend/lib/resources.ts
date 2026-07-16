@@ -102,10 +102,15 @@ export const tasksApi = {
   // ---- Team shared pool ("팀 할일") ----
   // Unclaimed tasks owned by no one; any teammate can claim one into their own list.
   teamPool: () => api<Task[]>("/api/tasks/team-pool"),
+  // Record of claimed pool tasks (who took what, when) — each is restorable.
+  claimedTeamTasks: () => api<Task[]>("/api/tasks/team-pool/claimed"),
   createTeamTask: (title: string) =>
     api<Task>("/api/tasks/team-pool", { method: "POST", body: { title } }),
   claimTeamTask: (id: number) =>
     api<Task>(`/api/tasks/team-pool/${id}/claim`, { method: "POST" }),
+  // Undo a claim: return the task to the pool.
+  restoreTeamTask: (id: number) =>
+    api<Task>(`/api/tasks/team-pool/${id}/restore`, { method: "POST" }),
   removeTeamTask: (id: number) => api<void>(`/api/tasks/team-pool/${id}`, { method: "DELETE" }),
 };
 
