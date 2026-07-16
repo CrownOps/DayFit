@@ -2,17 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CalendarEvent } from "@/lib/types";
-import { hhmm, minutesSinceMidnight, isoDate } from "@/lib/dates";
+import { hhmm, isoDate, startOfDay } from "@/lib/dates";
 import { clsx } from "@/lib/clsx";
 
 const START_HOUR = 6;
 const END_HOUR = 24;
 const HOUR_PX = 56;
-
-function topFor(iso: string): number {
-  const mins = minutesSinceMidnight(iso) - START_HOUR * 60;
-  return (mins / 60) * HOUR_PX;
-}
 
 export function Timetable({
   date,
@@ -72,10 +67,15 @@ export function Timetable({
           </div>
         )}
 
-        {/* Events (and injected daily-routine blocks) */}
+        {/* Events (and injected daily-routine blocks), clamped to this day so
+            multi-day events render on every day they cover */}
         {events.map((ev) => {
-          const top = topFor(ev.start_at);
-          const bottom = topFor(ev.end_at);
+          const dayStartMs = startOfDay(date).getTime();
+          const startMins = Math.max(0, (new Date(ev.start_at).getTime() - dayStartMs) / 60000);
+          const endMins = Math.min(24 * 60, (new Date(ev.end_at).getTime() - dayStartMs) / 60000);
+          if (endMins <= startMins) return null;
+          const top = ((startMins - START_HOUR * 60) / 60) * HOUR_PX;
+          const bottom = ((endMins - START_HOUR * 60) / 60) * HOUR_PX;
           const height = Math.max(bottom - top, 22);
           if (top > totalHeight || bottom < 0) return null;
 

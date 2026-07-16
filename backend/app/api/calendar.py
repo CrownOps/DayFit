@@ -112,13 +112,17 @@ def get_events(
     if end is None:
         end = start + timedelta(days=1)
 
+    # Overlap semantics (start_at < end AND end_at > start) so multi-day events
+    # that began before the window still appear — matching how the Google API
+    # interprets timeMin/timeMax. The delete uses the same window as the fetch,
+    # otherwise re-synced spanning events would accumulate duplicates.
     if user.google_calendar_connected:
         items = gcal.list_events(user, db, start, end)
         db.query(CalendarEventCache).filter(
             CalendarEventCache.user_id == user.id,
             CalendarEventCache.source == "google",
-            CalendarEventCache.start_at >= start,
             CalendarEventCache.start_at < end,
+            CalendarEventCache.end_at > start,
         ).delete()
         rows = [_to_cache_row(user.id, item) for item in items]
         db.add_all(rows)
@@ -128,8 +132,8 @@ def get_events(
         db.query(CalendarEventCache)
         .filter(
             CalendarEventCache.user_id == user.id,
-            CalendarEventCache.start_at >= start,
             CalendarEventCache.start_at < end,
+            CalendarEventCache.end_at > start,
         )
         .order_by(CalendarEventCache.start_at)
         .all()

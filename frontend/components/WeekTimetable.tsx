@@ -2,18 +2,13 @@
 
 import { useEffect, useState } from "react";
 import type { CalendarEvent } from "@/lib/types";
-import { addDays, hhmm, isoDate, minutesSinceMidnight } from "@/lib/dates";
+import { addDays, hhmm, isoDate } from "@/lib/dates";
 import { clsx } from "@/lib/clsx";
 
 const START_HOUR = 6;
 const END_HOUR = 24;
 const HOUR_PX = 44;
 const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
-
-function topFor(iso: string): number {
-  const mins = minutesSinceMidnight(iso) - START_HOUR * 60;
-  return (mins / 60) * HOUR_PX;
-}
 
 export function WeekTimetable({
   weekStart,
@@ -43,12 +38,22 @@ export function WeekTimetable({
   for (let h = START_HOUR; h <= END_HOUR; h++) hours.push(h);
   const totalHeight = (END_HOUR - START_HOUR) * HOUR_PX;
 
-  // Bucket events by local day iso.
-  const byDay: Record<string, CalendarEvent[]> = {};
-  for (const ev of events) {
-    const key = isoDate(new Date(ev.start_at));
-    (byDay[key] ??= []).push(ev);
-  }
+  // Events overlapping each day (multi-day events appear in every day column
+  // they cover), clamped to that day's boundaries.
+  const dayEventsFor = (d: Date) => {
+    const dayStartMs = d.getTime();
+    const dayEndMs = dayStartMs + 24 * 60 * 60000;
+    return events
+      .filter(
+        (ev) =>
+          new Date(ev.start_at).getTime() < dayEndMs && new Date(ev.end_at).getTime() > dayStartMs
+      )
+      .map((ev) => {
+        const startMins = Math.max(0, (new Date(ev.start_at).getTime() - dayStartMs) / 60000);
+        const endMins = Math.min(24 * 60, (new Date(ev.end_at).getTime() - dayStartMs) / 60000);
+        return { ev, startMins, endMins };
+      });
+  };
 
   return (
     <div className="rounded-xl border border-border bg-surface overflow-hidden">
@@ -93,7 +98,7 @@ export function WeekTimetable({
           {days.map((d) => {
             const iso = isoDate(d);
             const isToday = iso === todayIso;
-            const dayEvents = byDay[iso] ?? [];
+            const dayEvents = dayEventsFor(d);
             return (
               <div key={iso} className="flex-1 relative border-l border-border">
                 {/* hour lines */}
@@ -113,9 +118,10 @@ export function WeekTimetable({
                 )}
 
                 {/* events (and injected daily-routine blocks) */}
-                {dayEvents.map((ev) => {
-                  const top = topFor(ev.start_at);
-                  const height = Math.max(topFor(ev.end_at) - top, 16);
+                {dayEvents.map(({ ev, startMins, endMins }) => {
+                  if (endMins <= startMins) return null;
+                  const top = ((startMins - START_HOUR * 60) / 60) * HOUR_PX;
+                  const height = Math.max(((endMins - startMins) / 60) * HOUR_PX, 16);
                   if (top > totalHeight || top + height < 0) return null;
 
                   if (ev.kind === "habit") {
