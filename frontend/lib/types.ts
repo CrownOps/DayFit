@@ -146,9 +146,9 @@ export interface Task {
   status: TaskStatus;
   completed: boolean;
   sort_order: number;
-  // Set if this task was claimed from a team pool item.
-  claimed_at: string | null;
   owner: { id: number; name: string } | null;
+  // Set only on a claim record (a team-pool task that was 가져가기'd); ISO timestamp.
+  claimed_at?: string | null;
 }
 
 export type BookStatus = "want" | "reading" | "done";

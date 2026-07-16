@@ -49,9 +49,9 @@ class TaskOut(BaseModel):
     status: TaskStatus
     completed: bool
     sort_order: int
-    # Set if this task was claimed from a team pool item.
-    claimed_at: Optional[datetime] = None
     owner: Optional[TaskOwner] = None
+    # When this task was claimed from the team pool (null unless it's a claim record).
+    claimed_at: Optional[datetime] = None
 
 
 class TeamTaskCreate(BaseModel):
