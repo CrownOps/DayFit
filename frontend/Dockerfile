@@ -7,9 +7,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install deps first for layer caching.
+# Install deps first for layer caching. Drop npm's download cache in the same
+# layer — it's hundreds of MB that otherwise ships in the image (and blew past
+# the prod VM's small disk during unpack).
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund && npm cache clean --force
 
 # App source.
 COPY frontend/ .
