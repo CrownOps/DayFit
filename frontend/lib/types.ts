@@ -127,6 +127,58 @@ export interface MeetingRoomReservation {
   can_cancel: boolean;
 }
 
+export type EmailFolder = "inbox" | "sent";
+
+export interface EmailSummary {
+  id: string;
+  thread_id: string;
+  subject: string;
+  from_: string;
+  snippet: string;
+  date: string;
+  unread: boolean;
+}
+
+export interface EmailDetail extends EmailSummary {
+  to_: string;
+  body_text: string;
+}
+
+export interface EmailListOut {
+  messages: EmailSummary[];
+  next_page_token: string | null;
+}
+
+export interface RecurringReservationOccurrenceOut {
+  id: number;
+  occurrence_date: string;
+  status: "booked" | "failed" | "cancelled";
+  detail: string | null;
+}
+
+export interface RecurringReservationRule {
+  id: number;
+  meeting_room_id: number;
+  weekday: number; // 0=Mon .. 6=Sun
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  purpose: string | null;
+  starts_on: string;
+  ends_on: string | null;
+  active: boolean;
+  occurrences: RecurringReservationOccurrenceOut[];
+}
+
+export interface RecurringReservationInput {
+  meeting_room_id: number;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  purpose?: string | null;
+  starts_on: string;
+  ends_on?: string | null;
+}
+
 export interface PushSubscriptionRow {
   id: number;
   endpoint: string;
@@ -140,8 +192,9 @@ export type TaskView = "own" | "team";
 export interface Task {
   id: number;
   title: string;
-  // "team" marks an unclaimed shared-pool item; the board only handles today/week.
-  scope: TaskScope | "team";
+  // "team" marks an unclaimed shared-pool item; "event" is a task attached to a
+  // calendar event that hasn't been promoted to "week" yet.
+  scope: TaskScope | "team" | "event";
   anchor_date: string;
   status: TaskStatus;
   completed: boolean;
@@ -149,6 +202,8 @@ export interface Task {
   owner: { id: number; name: string } | null;
   // Set only on a claim record (a team-pool task that was 가져가기'd); ISO timestamp.
   claimed_at?: string | null;
+  // Set when this task was created from a calendar event ("일정 할일").
+  calendar_event_id?: number | null;
 }
 
 export type BookStatus = "want" | "reading" | "done";

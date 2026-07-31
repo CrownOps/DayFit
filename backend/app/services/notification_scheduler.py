@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.models.calendar import CalendarEventCache
 from app.models.habit import Habit
 from app.models.push import NotificationSchedule
+from app.services import recurring_reservation_service
 from app.services.habit_service import is_scheduled_day
 from app.services.push_service import send_to_user
 
@@ -115,6 +116,16 @@ def run_notification_sweep() -> None:
         db.close()
 
 
+def run_recurring_reservation_sweep() -> None:
+    db = SessionLocal()
+    try:
+        recurring_reservation_service.ensure_upcoming_bookings(db)
+    except Exception:
+        logger.exception("Recurring reservation sweep failed")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -122,6 +133,13 @@ def start_scheduler() -> BackgroundScheduler:
 
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(run_notification_sweep, "interval", minutes=1, id="notification_sweep")
+    _scheduler.add_job(
+        run_recurring_reservation_sweep,
+        "interval",
+        hours=24,
+        id="recurring_reservations",
+        next_run_time=datetime.now(timezone.utc),
+    )
     _scheduler.start()
     return _scheduler
 

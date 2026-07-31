@@ -26,7 +26,10 @@ from app.models.user import User  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 
 
 class GoogleNotConfiguredError(Exception):
@@ -165,7 +168,12 @@ def _load_credentials(user: User, config: GoogleOAuthConfig) -> Credentials:
     return creds
 
 
-def get_calendar_service(user: User, db: Session):
+def get_google_credentials(user: User, db: Session) -> Credentials:
+    """Load (and refresh if needed) this user's Google credentials.
+
+    Shared by every Google API surface (Calendar, Gmail, ...) since they all
+    ride on the same OAuth token/scope set.
+    """
     config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
@@ -174,6 +182,11 @@ def get_calendar_service(user: User, db: Session):
         user.google_oauth_token_encrypted = encrypt_secret(creds.token)
         db.add(user)
         db.commit()
+    return creds
+
+
+def get_calendar_service(user: User, db: Session):
+    creds = get_google_credentials(user, db)
     return build("calendar", "v3", credentials=creds)
 
 

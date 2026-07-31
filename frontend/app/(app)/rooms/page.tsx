@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { meetingRoomsApi } from "@/lib/resources";
-import type { MeetingRoom, MeetingRoomReservation } from "@/lib/types";
-import { addDays, hhmm, isoDate, koreanDate } from "@/lib/dates";
+import type { MeetingRoom, MeetingRoomReservation, RecurringReservationRule } from "@/lib/types";
+import { addDays, hhmm, isoDate, koreanDate, timeLabel } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { clsx } from "@/lib/clsx";
+
+const WEEKDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
 export default function RoomsPage() {
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
@@ -22,6 +24,38 @@ export default function RoomsPage() {
   const [listError, setListError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
+
+  const [rules, setRules] = useState<RecurringReservationRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(true);
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false);
+
+  const loadRules = useCallback(async () => {
+    setRulesLoading(true);
+    setRulesError(null);
+    try {
+      setRules(await meetingRoomsApi.recurring.list());
+    } catch (err) {
+      setRulesError(err instanceof ApiError ? err.message : "정기예약을 불러오지 못했습니다");
+    } finally {
+      setRulesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRules();
+  }, [loadRules]);
+
+  async function cancelRule(id: number) {
+    if (!confirm("이 정기예약을 취소할까요? 아직 지나지 않은 예약도 함께 취소됩니다.")) return;
+    try {
+      await meetingRoomsApi.recurring.remove(id);
+      await loadRules();
+      await loadReservations();
+    } catch (err) {
+      setRulesError(err instanceof ApiError ? err.message : "취소에 실패했습니다");
+    }
+  }
 
   useEffect(() => {
     meetingRoomsApi
@@ -71,9 +105,14 @@ export default function RoomsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary">회의실 예약</h1>
-        <Button onClick={() => setModalOpen(true)} disabled={selectedRoomId == null}>
-          예약하기
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => setRecurringModalOpen(true)} disabled={selectedRoomId == null}>
+            정기예약 추가
+          </Button>
+          <Button onClick={() => setModalOpen(true)} disabled={selectedRoomId == null}>
+            예약하기
+          </Button>
+        </div>
       </div>
 
       {roomsLoading ? (
@@ -187,6 +226,61 @@ export default function RoomsPage() {
         </>
       )}
 
+      {/* Recurring reservations ("정기예약") */}
+      {!roomsLoading && rooms.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold text-text-primary">정기예약</h2>
+          <ErrorAlert>{rulesError}</ErrorAlert>
+          {rulesLoading ? (
+            <div className="grid place-items-center py-8">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : rules.length === 0 ? (
+            <Card>
+              <p className="text-sm text-text-tertiary">등록된 정기예약이 없습니다.</p>
+            </Card>
+          ) : (
+            <Card className="p-0 divide-y divide-border">
+              {rules.map((rule) => {
+                const room = rooms.find((r) => r.id === rule.meeting_room_id);
+                const upcoming = rule.occurrences.filter((o) => o.status === "booked").length;
+                const failed = rule.occurrences.filter((o) => o.status === "failed");
+                return (
+                  <div key={rule.id} className="space-y-1 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-text-primary">
+                          {room?.name ?? `회의실 #${rule.meeting_room_id}`} · 매주 {WEEKDAY_LABELS[rule.weekday]}요일{" "}
+                          {timeLabel(rule.start_time)}–{timeLabel(rule.end_time)}
+                        </div>
+                        <div className="truncate text-xs text-text-tertiary">
+                          {rule.purpose || "목적 없음"} · {rule.starts_on}부터{rule.ends_on ? ` ${rule.ends_on}까지` : ""}
+                        </div>
+                      </div>
+                      {rule.active && (
+                        <button
+                          onClick={() => cancelRule(rule.id)}
+                          className="shrink-0 text-text-tertiary hover:text-danger text-xs"
+                        >
+                          취소
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-xs text-text-tertiary">
+                      예정 {upcoming}건
+                      {failed.length > 0 && (
+                        <span className="text-danger"> · 실패 {failed.length}건 ({failed[0].detail})</span>
+                      )}
+                      {!rule.active && <span> · 취소됨</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+        </section>
+      )}
+
       {selectedRoom && (
         <ReserveModal
           open={modalOpen}
@@ -194,6 +288,15 @@ export default function RoomsPage() {
           room={selectedRoom}
           date={date}
           onReserved={loadReservations}
+        />
+      )}
+
+      {selectedRoom && (
+        <RecurringReservationModal
+          open={recurringModalOpen}
+          onClose={() => setRecurringModalOpen(false)}
+          room={selectedRoom}
+          onCreated={loadRules}
         />
       )}
     </div>
@@ -276,6 +379,125 @@ function ReserveModal({
           </Button>
           <Button type="submit" disabled={saving}>
             {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "예약"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function RecurringReservationModal({
+  open,
+  onClose,
+  room,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  room: MeetingRoom;
+  onCreated: () => void;
+}) {
+  const [weekday, setWeekday] = useState(0);
+  const [start, setStart] = useState("10:00");
+  const [end, setEnd] = useState("11:00");
+  const [purpose, setPurpose] = useState("");
+  const [startsOn, setStartsOn] = useState(isoDate(new Date()));
+  const [endsOn, setEndsOn] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setWeekday(0);
+    setStart("10:00");
+    setEnd("11:00");
+    setPurpose("");
+    setStartsOn(isoDate(new Date()));
+    setEndsOn("");
+    setError(null);
+  }, [open]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await meetingRoomsApi.recurring.create({
+        meeting_room_id: room.id,
+        weekday,
+        start_time: `${start}:00`,
+        end_time: `${end}:00`,
+        purpose: purpose || null,
+        starts_on: startsOn,
+        ends_on: endsOn || null,
+      });
+      onCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "정기예약 등록에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`${room.name} 정기예약`}>
+      <form onSubmit={save} className="space-y-3">
+        <div>
+          <Label htmlFor="rr-weekday">요일</Label>
+          <select
+            id="rr-weekday"
+            value={weekday}
+            onChange={(e) => setWeekday(Number(e.target.value))}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+          >
+            {WEEKDAY_LABELS.map((label, idx) => (
+              <option key={idx} value={idx}>
+                매주 {label}요일
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="rr-start">시작</Label>
+            <Input id="rr-start" type="time" value={start} onChange={(e) => setStart(e.target.value)} required />
+          </div>
+          <div>
+            <Label htmlFor="rr-end">종료</Label>
+            <Input id="rr-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="rr-starts">시작일</Label>
+            <Input id="rr-starts" type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} required />
+          </div>
+          <div>
+            <Label htmlFor="rr-ends">종료일 (선택)</Label>
+            <Input id="rr-ends" type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="rr-purpose">목적</Label>
+          <Textarea
+            id="rr-purpose"
+            rows={2}
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            placeholder="예: 주간 팀 회고"
+          />
+        </div>
+        <p className="text-xs text-text-tertiary">
+          등록하면 향후 4주치 예약이 즉시 생성됩니다. 이후에도 매일 자동으로 다음 4주치가 유지됩니다.
+        </p>
+        <ErrorAlert>{error}</ErrorAlert>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            취소
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "등록"}
           </Button>
         </div>
       </form>

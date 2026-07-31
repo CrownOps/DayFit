@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.models.calendar import CalendarEventCache
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import (
@@ -94,23 +95,49 @@ def list_tasks(
 
 @router.post("", response_model=TaskOut)
 def create_task(payload: TaskCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    anchor = _anchor_for(payload.scope)
+    if payload.calendar_event_id is not None:
+        event = db.get(CalendarEventCache, payload.calendar_event_id)
+        if event is None or event.user_id != user.id:
+            raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다")
+        scope = "event"
+        anchor = event.start_at.date()
+    else:
+        scope = payload.scope
+        anchor = _anchor_for(payload.scope)
+
     max_order = (
         db.query(func.coalesce(func.max(Task.sort_order), 0))
-        .filter(Task.user_id == user.id, Task.scope == payload.scope, Task.anchor_date == anchor)
+        .filter(Task.user_id == user.id, Task.scope == scope, Task.anchor_date == anchor)
         .scalar()
     )
     task = Task(
         user_id=user.id,
         title=payload.title,
-        scope=payload.scope,
+        scope=scope,
         anchor_date=anchor,
+        calendar_event_id=payload.calendar_event_id,
         sort_order=(max_order or 0) + 1,
     )
     db.add(task)
     db.commit()
     db.refresh(task)
     return _to_out(task, user.id, user.name)
+
+
+@router.get("/by-event/{event_id}", response_model=list[TaskOut])
+def list_tasks_for_event(
+    event_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Every task attached to this event (still scope="event", or already
+    promoted to "week") — shown in the event's detail modal regardless of
+    whether it's been promoted."""
+    rows = (
+        db.query(Task)
+        .filter(Task.user_id == user.id, Task.calendar_event_id == event_id)
+        .order_by(Task.sort_order, Task.id)
+        .all()
+    )
+    return [_to_out(task, user.id, user.name) for task in rows]
 
 
 @router.put("/reorder", response_model=list[TaskOut])

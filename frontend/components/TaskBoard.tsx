@@ -386,6 +386,11 @@ function TaskRow({
           팀
         </span>
       )}
+      {task.calendar_event_id != null && (
+        <span title="일정에서 승격된 할일" className="shrink-0 text-xs" aria-hidden>
+          📅
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus

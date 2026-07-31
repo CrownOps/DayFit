@@ -11,6 +11,7 @@ from app.api import (
     books,
     bottlenecks,
     calendar,
+    gmail,
     habits,
     integrations,
     meeting_rooms,
@@ -69,6 +70,7 @@ app.include_router(auth.router)
 app.include_router(books.router)
 app.include_router(bottlenecks.router)
 app.include_router(calendar.router)
+app.include_router(gmail.router)
 app.include_router(habits.router)
 app.include_router(integrations.router)
 app.include_router(meeting_rooms.router)
