@@ -107,6 +107,8 @@ export const tasksApi = {
     body: { title?: string; status?: TaskStatus; completed?: boolean; scope?: TaskScope }
   ) => api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  // History of past today/week tasks (mirrors the team pool's claimed-record log).
+  log: () => api<Task[]>("/api/tasks/log"),
   // ---- Event-linked tasks ("일정 할일") ----
   byEvent: (eventId: number) => api<Task[]>(`/api/tasks/by-event/${eventId}`),
   createForEvent: (title: string, eventId: number) =>

@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 import { STATUS_META, StatusToggle, nextStatus } from "@/components/TaskStatus";
+import { TaskLog } from "@/components/TaskLog";
 
 type Lists = Record<TaskScope, Task[]>;
 
@@ -182,6 +183,7 @@ export function TaskBoard() {
           />
         ))}
       </div>
+      <TaskLog />
     </div>
   );
 }

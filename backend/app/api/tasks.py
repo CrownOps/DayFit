@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -91,6 +91,28 @@ def list_tasks(
     # sinking below still-open ones.
     rows = query.order_by(Task.sort_order, Task.id).all()
     return [_to_out(task, uid, uname) for task, uid, uname in rows]
+
+
+@router.get("/log", response_model=list[TaskOut])
+def list_task_log(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """History of the user's own today/week tasks, most recent first — the
+    personal equivalent of the "가져간 기록" log shown for the team pool.
+    Excludes rows currently live in the 오늘/이번 주 columns (already shown there).
+    """
+    today_anchor = _anchor_for("today")
+    week_anchor = _anchor_for("week")
+    currently_live = or_(
+        and_(Task.scope == "today", Task.anchor_date == today_anchor),
+        and_(Task.scope == "week", Task.anchor_date == week_anchor),
+    )
+    rows = (
+        db.query(Task)
+        .filter(Task.user_id == user.id, Task.scope.in_(["today", "week"]), ~currently_live)
+        .order_by(Task.anchor_date.desc(), Task.id.desc())
+        .limit(200)
+        .all()
+    )
+    return [_to_out(task, user.id, user.name) for task in rows]
 
 
 @router.post("", response_model=TaskOut)

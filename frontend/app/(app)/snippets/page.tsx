@@ -112,12 +112,34 @@ export default function SnippetsPage() {
     return map;
   }, [snippets, scope]);
 
-  // Append task text pulled from the "내 할 일 참고" panel to the draft, keeping a
-  // clean newline boundary so inserted bullets don't run into existing text.
+  // Matches the "#### 오늘 한 일" heading from SNIPPET_TEMPLATE, regardless of
+  // heading level or surrounding whitespace.
+  const TODAY_HEADING_RE = /^#{1,6}\s*오늘\s*한\s*일\s*$/;
+
+  // Insert task text pulled from the "내 할 일 참고" panel into the draft, right
+  // under the "오늘 한 일" section (before the next heading) instead of at the
+  // very end of the draft. Falls back to appending at the end when the draft
+  // has no such heading (e.g. the user rewrote the template).
   function insertIntoDraft(text: string) {
     setDraft((prev) => {
       if (!prev.trim()) return text;
-      return prev.replace(/\n*$/, "\n") + text;
+
+      const lines = prev.split("\n");
+      const headingIdx = lines.findIndex((l) => TODAY_HEADING_RE.test(l.trim()));
+      if (headingIdx === -1) return prev.replace(/\n*$/, "\n") + text;
+
+      let sectionEnd = lines.length;
+      for (let i = headingIdx + 1; i < lines.length; i++) {
+        if (/^#{1,6}\s/.test(lines[i])) {
+          sectionEnd = i;
+          break;
+        }
+      }
+      // Insert right after the section's existing content (skip trailing blanks).
+      while (sectionEnd > headingIdx + 1 && lines[sectionEnd - 1].trim() === "") sectionEnd--;
+
+      const insertLines = text.replace(/\n+$/, "").split("\n");
+      return [...lines.slice(0, sectionEnd), ...insertLines, ...lines.slice(sectionEnd)].join("\n");
     });
   }
 
