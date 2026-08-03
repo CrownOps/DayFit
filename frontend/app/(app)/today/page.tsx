@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { calendarApi, habitsApi } from "@/lib/resources";
-import type { CalendarEvent, Habit, HabitLog } from "@/lib/types";
+import { calendarApi, habitsApi, tasksApi } from "@/lib/resources";
+import type { CalendarEvent, Habit, HabitLog, Task } from "@/lib/types";
 import {
   addDays,
   addMonths,
@@ -463,6 +463,7 @@ function EventModal({
             />
           </div>
         )}
+        {event && !readOnly && <EventTasksSection eventId={event.id} />}
         <ErrorAlert>{error}</ErrorAlert>
         <div className="flex items-center justify-between pt-2">
           {event && !readOnly ? (
@@ -485,5 +486,136 @@ function EventModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** "일정 할일" — tasks attached to this event. New ones start hidden from the
+ * 할 일 page (scope="event") until the user taps "이번주로 승격". */
+function EventTasksSection({ eventId }: { eventId: number }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setTasks(await tasksApi.byEvent(eventId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "일정 할일을 불러오지 못했습니다");
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function addTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await tasksApi.createForEvent(title.trim(), eventId);
+      setTitle("");
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "추가에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleDone(task: Task) {
+    try {
+      const updated = await tasksApi.update(task.id, { completed: task.status !== "done" });
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "변경에 실패했습니다");
+    }
+  }
+
+  async function promote(task: Task) {
+    try {
+      const updated = await tasksApi.promoteToWeek(task.id);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "승격에 실패했습니다");
+    }
+  }
+
+  async function removeTask(task: Task) {
+    try {
+      await tasksApi.remove(task.id);
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "삭제에 실패했습니다");
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <Label>일정 할일</Label>
+      {loading ? (
+        <Spinner className="h-4 w-4" />
+      ) : (
+        <div className="space-y-1">
+          {tasks.length === 0 && (
+            <p className="text-xs text-text-tertiary">아직 등록된 할일이 없습니다.</p>
+          )}
+          {tasks.map((task) => (
+            <div key={task.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={task.status === "done"}
+                onChange={() => toggleDone(task)}
+                className="accent-[var(--color-accent)]"
+              />
+              <span
+                className={clsx(
+                  "flex-1 min-w-0 truncate",
+                  task.status === "done" ? "line-through text-text-tertiary" : "text-text-primary"
+                )}
+              >
+                {task.title}
+              </span>
+              {task.scope === "event" ? (
+                <button
+                  type="button"
+                  onClick={() => promote(task)}
+                  className="shrink-0 text-xs text-accent hover:underline"
+                >
+                  이번주로 승격
+                </button>
+              ) : (
+                <span className="shrink-0 text-xs text-text-tertiary">이번주 할일에 있음</span>
+              )}
+              <button
+                type="button"
+                onClick={() => removeTask(task)}
+                className="shrink-0 text-text-tertiary hover:text-danger text-xs"
+              >
+                삭제
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <form onSubmit={addTask} className="flex gap-2 pt-1">
+        <Input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="새 할일 추가"
+          className="flex-1"
+        />
+        <Button type="submit" variant="ghost" disabled={busy || !title.trim()}>
+          추가
+        </Button>
+      </form>
+      <ErrorAlert>{error}</ErrorAlert>
+    </div>
   );
 }

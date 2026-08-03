@@ -8,6 +8,9 @@ import type {
   BottleneckAction,
   BottleneckInput,
   CalendarEvent,
+  EmailDetail,
+  EmailFolder,
+  EmailListOut,
   EventInput,
   MyGoogleIntegration,
   Habit,
@@ -18,6 +21,8 @@ import type {
   MeetingRoom,
   MeetingRoomReservation,
   PushSubscriptionRow,
+  RecurringReservationInput,
+  RecurringReservationRule,
   Snippet,
   Task,
   TaskScope,
@@ -37,6 +42,13 @@ export const calendarApi = {
   update: (id: number, body: Partial<EventInput>) =>
     api<CalendarEvent>(`/api/calendar/events/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/calendar/events/${id}`, { method: "DELETE" }),
+};
+
+// ---- Gmail (read-only) ----
+export const gmailApi = {
+  list: (folder: EmailFolder, pageToken?: string | null) =>
+    api<EmailListOut>("/api/gmail/messages", { query: { folder, page_token: pageToken } }),
+  get: (id: string) => api<EmailDetail>(`/api/gmail/messages/${id}`),
 };
 
 // ---- Habits ----
@@ -95,6 +107,14 @@ export const tasksApi = {
     body: { title?: string; status?: TaskStatus; completed?: boolean; scope?: TaskScope }
   ) => api<Task>(`/api/tasks/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  // History of past today/week tasks (mirrors the team pool's claimed-record log).
+  log: () => api<Task[]>("/api/tasks/log"),
+  // ---- Event-linked tasks ("일정 할일") ----
+  byEvent: (eventId: number) => api<Task[]>(`/api/tasks/by-event/${eventId}`),
+  createForEvent: (title: string, eventId: number) =>
+    api<Task>("/api/tasks", { method: "POST", body: { title, calendar_event_id: eventId } }),
+  // Promote an event-linked task into this week's "할 일" column.
+  promoteToWeek: (id: number) => api<Task>(`/api/tasks/${id}`, { method: "PATCH", body: { scope: "week" } }),
   // Move/reorder: `ids` is the target column's full order; any task not already
   // in `scope` is moved into it. Returns the updated tasks for that column.
   reorder: (scope: TaskScope, ids: number[]) =>
@@ -165,6 +185,13 @@ export const meetingRoomsApi = {
     api<MeetingRoomReservation>(`/api/meeting-rooms/${roomId}/reservations`, { method: "POST", body }),
   cancel: (reservationId: number) =>
     api<{ message: string }>(`/api/meeting-rooms/reservations/${reservationId}`, { method: "DELETE" }),
+  recurring: {
+    list: () => api<RecurringReservationRule[]>("/api/meeting-rooms/recurring"),
+    create: (body: RecurringReservationInput) =>
+      api<RecurringReservationRule>("/api/meeting-rooms/recurring", { method: "POST", body }),
+    remove: (ruleId: number) =>
+      api<{ message: string }>(`/api/meeting-rooms/recurring/${ruleId}`, { method: "DELETE" }),
+  },
 };
 
 // ---- Push ----

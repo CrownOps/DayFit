@@ -183,7 +183,16 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
     <Card className="space-y-3">
       <h2 className="text-sm font-semibold text-text-primary">Google Calendar</h2>
       {connected ? (
-        <p className="text-sm text-success">✓ 연결됨</p>
+        <>
+          <p className="text-sm text-success">✓ 연결됨</p>
+          <p className="text-xs text-text-tertiary">
+            이메일(받은편지함/보낸편지함) 조회 기능을 쓰려면, 이메일 권한이 추가되었으니 아래 버튼으로 한 번 더
+            연결해 권한 동의를 갱신하세요.
+          </p>
+          <Button variant="ghost" onClick={connect} disabled={busy}>
+            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "다시 연결 (권한 갱신)"}
+          </Button>
+        </>
       ) : (
         <>
           <p className="text-xs text-text-tertiary">

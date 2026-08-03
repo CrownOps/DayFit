@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui";
 import { FullLogo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { SidebarNav, BottomNav } from "@/components/AppNav";
+import { SidebarNav, MobileDrawerNav } from "@/components/AppNav";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -45,17 +46,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between border-b border-border bg-surface px-4 py-3 sticky top-0 z-10">
+        <header className="md:hidden flex items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sticky top-0 z-10">
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="메뉴 열기"
+            className="text-xl leading-none text-text-primary px-1"
+          >
+            ☰
+          </button>
           <FullLogo width={150} />
           <ThemeToggle />
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 pb-24 md:pb-6 max-w-4xl w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 md:pb-6 max-w-4xl w-full mx-auto">
           {children}
         </main>
       </div>
 
-      <BottomNav />
+      <MobileDrawerNav open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   );
 }

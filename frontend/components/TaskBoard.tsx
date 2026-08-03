@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 import { STATUS_META, StatusToggle, nextStatus } from "@/components/TaskStatus";
+import { TaskLog } from "@/components/TaskLog";
 
 type Lists = Record<TaskScope, Task[]>;
 
@@ -182,6 +183,7 @@ export function TaskBoard() {
           />
         ))}
       </div>
+      <TaskLog />
     </div>
   );
 }
@@ -384,6 +386,11 @@ function TaskRow({
           className="shrink-0 rounded-full bg-accent-secondary/15 text-accent-secondary border border-accent-secondary/40 px-1.5 py-0.5 text-[10px] font-medium"
         >
           팀
+        </span>
+      )}
+      {task.calendar_event_id != null && (
+        <span title="일정에서 승격된 할일" className="shrink-0 text-xs" aria-hidden>
+          📅
         </span>
       )}
       {editing ? (

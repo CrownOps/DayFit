@@ -26,10 +26,16 @@ class Task(Base):
     team_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     # When a team-pool task was claimed (NULL while available or for personal tasks).
     claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when this task was created from a calendar event ("일정 할일"); stays set
+    # even after the task is promoted to "week" so the event modal can still list it.
+    calendar_event_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("calendar_events_cache.id"), nullable=True, index=True
+    )
 
     title: Mapped[str] = mapped_column(String(500))
     # "today" -> anchor_date is the specific day; "week" -> anchor_date is the Monday of that week;
-    # "team" -> unclaimed shared pool item (anchor_date unused).
+    # "team" -> unclaimed shared pool item (anchor_date unused); "event" -> attached to a calendar
+    # event, not yet promoted into "week" (hidden from both today/week columns until then).
     scope: Mapped[str] = mapped_column(String(16), default="today")
     anchor_date: Mapped[date] = mapped_column(Date, index=True)
 

@@ -4,6 +4,10 @@ from app.models.calendar import CalendarEventCache
 from app.models.habit import Habit, HabitLog
 from app.models.integration import IntegrationSettings
 from app.models.push import NotificationSchedule, PushSubscription
+from app.models.recurring_reservation import (
+    RecurringReservationOccurrence,
+    RecurringRoomReservation,
+)
 from app.models.task import Task
 from app.models.team import Team, TeamRule
 from app.models.token_usage import TokenUsageLog
@@ -25,4 +29,6 @@ __all__ = [
     "Team",
     "TeamRule",
     "IntegrationSettings",
+    "RecurringRoomReservation",
+    "RecurringReservationOccurrence",
 ]

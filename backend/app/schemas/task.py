@@ -12,6 +12,9 @@ TaskView = Literal["own", "team"]
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     scope: Scope = "today"
+    # When set, the task is created attached to a calendar event instead
+    # (scope is forced to "event" server-side, ignoring the field above).
+    calendar_event_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
@@ -52,6 +55,8 @@ class TaskOut(BaseModel):
     owner: Optional[TaskOwner] = None
     # When this task was claimed from the team pool (null unless it's a claim record).
     claimed_at: Optional[datetime] = None
+    # Set when the task was created from a calendar event ("일정 할일").
+    calendar_event_id: Optional[int] = None
 
 
 class TeamTaskCreate(BaseModel):
