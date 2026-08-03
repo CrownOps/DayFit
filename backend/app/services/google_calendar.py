@@ -26,10 +26,15 @@ from app.models.user import User  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/gmail.readonly",
-]
+CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Requested together at the OAuth consent screen / code exchange, so a single
+# connection covers both. Refreshing a token must NOT declare this combined
+# set, though — Google rejects a refresh whose requested scope exceeds what
+# that specific refresh_token was actually granted (`invalid_scope`), which
+# would break Calendar for anyone who hasn't reconnected for Gmail yet. Each
+# caller of `get_google_credentials` below declares only the scope it needs.
+SCOPES = CALENDAR_SCOPES + GMAIL_SCOPES
 
 
 class GoogleNotConfiguredError(Exception):
@@ -151,7 +156,7 @@ def save_credentials(db: Session, user: User, creds: Credentials) -> None:
     db.commit()
 
 
-def _load_credentials(user: User, config: GoogleOAuthConfig) -> Credentials:
+def _load_credentials(user: User, config: GoogleOAuthConfig, scopes: list[str]) -> Credentials:
     if not user.google_refresh_token_encrypted:
         raise ValueError("User has not connected Google Calendar")
 
@@ -161,23 +166,27 @@ def _load_credentials(user: User, config: GoogleOAuthConfig) -> Credentials:
         token_uri="https://oauth2.googleapis.com/token",
         client_id=config.client_id,
         client_secret=config.client_secret,
-        scopes=SCOPES,
+        scopes=scopes,
     )
     if not creds.valid:
         creds.refresh(Request())
     return creds
 
 
-def get_google_credentials(user: User, db: Session) -> Credentials:
-    """Load (and refresh if needed) this user's Google credentials.
+def get_google_credentials(user: User, db: Session, scopes: list[str] = CALENDAR_SCOPES) -> Credentials:
+    """Load (and refresh if needed) this user's Google credentials for `scopes`.
 
     Shared by every Google API surface (Calendar, Gmail, ...) since they all
-    ride on the same OAuth token/scope set.
+    ride on the same OAuth token — but `scopes` must be no wider than what was
+    actually granted, or Google rejects the refresh with `invalid_scope`
+    (users who haven't reconnected for Gmail only have CALENDAR_SCOPES on their
+    refresh_token). Defaults to CALENDAR_SCOPES since that's guaranteed to be
+    a subset for every connected user.
     """
     config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
-    creds = _load_credentials(user, config)
+    creds = _load_credentials(user, config, scopes)
     if creds.token:
         user.google_oauth_token_encrypted = encrypt_secret(creds.token)
         db.add(user)

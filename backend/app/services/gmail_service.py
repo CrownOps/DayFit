@@ -2,16 +2,21 @@ import base64
 import re
 from datetime import datetime, timezone
 
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.services.google_calendar import get_google_credentials
+from app.services.google_calendar import GMAIL_SCOPES, get_google_credentials
 
 _FOLDER_LABELS = {"inbox": "INBOX", "sent": "SENT"}
 
 _METADATA_HEADERS = ["From", "To", "Subject", "Date"]
+
+_NOT_CONNECTED_DETAIL = (
+    "Gmail 권한이 없습니다. 설정에서 Google Calendar를 다시 연결해 이메일 권한을 추가하세요."
+)
 
 
 class GmailError(Exception):
@@ -22,7 +27,13 @@ class GmailError(Exception):
 
 
 def _service(user: User, db: Session):
-    creds = get_google_credentials(user, db)
+    try:
+        creds = get_google_credentials(user, db, GMAIL_SCOPES)
+    except RefreshError:
+        # The stored refresh_token doesn't cover gmail.readonly yet (user
+        # hasn't reconnected since it was added) — Google rejects the refresh
+        # outright with invalid_scope rather than an ordinary HttpError.
+        raise GmailError(400, _NOT_CONNECTED_DETAIL) from None
     return build("gmail", "v1", credentials=creds)
 
 
