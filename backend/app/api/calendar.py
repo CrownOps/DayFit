@@ -39,6 +39,14 @@ def authorize(request: Request, user: User = Depends(get_current_user), db: Sess
         )
 
 
+def _purpose_from_state(state: str | None) -> str:
+    """Best-effort purpose ("calendar"/"gmail") for redirecting back to
+    /settings, even on paths that never reach `exchange_code_for_tokens`."""
+    if state and ":" in state:
+        return state.split(":", 1)[1]
+    return "calendar"
+
+
 @router.get("/oauth/callback")
 def oauth_callback(
     request: Request,
@@ -47,40 +55,42 @@ def oauth_callback(
     error: str | None = None,
     db: Session = Depends(get_db),
 ):
+    purpose = _purpose_from_state(state)
     if error or not code or not state:
         # User denied consent, or Google redirected without an auth code.
         logger.info("Google OAuth callback without code (error=%s, state=%s)", error, state)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
 
     try:
-        user_id, creds = gcal.exchange_code_for_tokens(db, code, state, _callback_url(request))
+        user_id, purpose, creds = gcal.exchange_code_for_tokens(db, code, state, _callback_url(request))
     except gcal.GoogleNotConfiguredError:
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=not_configured")
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=not_configured")
     except Exception:
         # Any failure exchanging the code (invalid/expired code, redirect_uri
         # mismatch, network error to Google's token endpoint, etc.) should send
         # the user back to settings with an error rather than a bare 500.
         logger.exception("Google OAuth token exchange failed for state=%s", state)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
 
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        gcal.save_credentials(db, user, creds)
+        gcal.save_credentials(db, user, creds, purpose)
     except Exception:
         logger.exception("Failed to save Google credentials for user_id=%s", user_id)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=error")
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
 
-    try:
-        gcal.disable_reminders_for_all_events(user, db)
-    except Exception:
-        # Reminder cleanup is best-effort; credentials are already saved, so the
-        # connection succeeded even if this step fails.
-        logger.exception("Failed to disable existing reminders for user_id=%s", user_id)
+    if purpose == "calendar":
+        try:
+            gcal.disable_reminders_for_all_events(user, db)
+        except Exception:
+            # Reminder cleanup is best-effort; credentials are already saved, so the
+            # connection succeeded even if this step fails.
+            logger.exception("Failed to disable existing reminders for user_id=%s", user_id)
 
-    return RedirectResponse(url=f"{settings.frontend_url}/settings?calendar=connected")
+    return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=connected")
 
 
 def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:

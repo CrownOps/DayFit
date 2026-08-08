@@ -18,7 +18,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/home", label: "홈", icon: "⌂" },
   { href: "/today", label: "일정", icon: "◷" },
   { href: "/tasks", label: "할 일", icon: "☑" },
-  { href: "/email", label: "이메일", icon: "✉" },
   { href: "/bottlenecks", label: "병목", icon: "⚠" },
   { href: "/habits", label: "데일리 루틴", icon: "✓" },
   { href: "/reading", label: "독서", icon: "❑" },
@@ -26,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/team", label: "헬스체크", icon: "◍" },
   { href: "/team-space", label: "팀룰", icon: "⚑" },
   { href: "/rooms", label: "회의실", icon: "▣" },
+  { href: "/email", label: "이메일", icon: "✉" },
   { href: "/admin", label: "관리자", icon: "★", adminOnly: true },
   { href: "/settings", label: "설정", icon: "⚙" },
 ];

@@ -65,9 +65,10 @@ def create_reservation(
 @router.delete("/reservations/{reservation_id}", response_model=MessageOut)
 def cancel_reservation(reservation_id: int, user: User = Depends(get_current_user)):
     try:
-        return gcs.cancel_room_reservation(user, reservation_id)
+        gcs.cancel_room_reservation(user, reservation_id)
     except GcsPulseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return {"message": "예약이 취소되었습니다"}
 
 
 # ---- Recurring reservations ("정기예약") --------------------------------

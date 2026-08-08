@@ -147,8 +147,12 @@ def create_room_reservation(user: User, room_id: int, start_at: str, end_at: str
         return resp.json()
 
 
-def cancel_room_reservation(user: User, reservation_id: int) -> dict:
+def cancel_room_reservation(user: User, reservation_id: int) -> None:
+    # Like delete_daily_snippet, GCS Pulse's DELETE returns no body (204) — it
+    # used to be treated as returning JSON here, which raised an unhandled
+    # JSON-decode error on every cancel and silently aborted the whole
+    # request (including the loop in recurring_reservation_service.cancel_rule,
+    # which left the recurring rule stuck "active").
     with _client(user) as client:
         resp = client.delete(f"/meeting-rooms/reservations/{reservation_id}")
         _raise_for_status(resp)
-        return resp.json()

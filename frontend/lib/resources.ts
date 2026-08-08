@@ -46,6 +46,7 @@ export const calendarApi = {
 
 // ---- Gmail (read-only) ----
 export const gmailApi = {
+  authorizeUrl: () => api<{ auth_url: string }>("/api/gmail/oauth/authorize"),
   list: (folder: EmailFolder, pageToken?: string | null) =>
     api<EmailListOut>("/api/gmail/messages", { query: { folder, page_token: pageToken } }),
   get: (id: string) => api<EmailDetail>(`/api/gmail/messages/${id}`),
