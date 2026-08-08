@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { calendarApi, integrationsApi, pushApi, usersApi } from "@/lib/resources";
+import { calendarApi, gmailApi, integrationsApi, pushApi, usersApi } from "@/lib/resources";
 import type { MyGoogleIntegration, PushSubscriptionRow } from "@/lib/types";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
@@ -38,6 +38,7 @@ export default function SettingsPage() {
       <PushSection />
       <GoogleClientSection />
       <GoogleCalendarSection connected={user?.google_calendar_connected ?? false} />
+      <GmailSection connected={user?.gmail_connected ?? false} />
       <GcsPulseSection />
       {user?.is_admin && (
         <Card className="space-y-2">
@@ -185,18 +186,15 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
       {connected ? (
         <>
           <p className="text-sm text-success">✓ 연결됨</p>
-          <p className="text-xs text-text-tertiary">
-            이메일(받은편지함/보낸편지함) 조회 기능을 쓰려면, 이메일 권한이 추가되었으니 아래 버튼으로 한 번 더
-            연결해 권한 동의를 갱신하세요.
-          </p>
           <Button variant="ghost" onClick={connect} disabled={busy}>
-            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "다시 연결 (권한 갱신)"}
+            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "다시 연결"}
           </Button>
         </>
       ) : (
         <>
           <p className="text-xs text-text-tertiary">
             연결하면 일정을 가져오고, 이 앱에서 만든 일정이 캘린더에 동기화됩니다. 캘린더 자체 알림은 꺼집니다.
+            이메일과는 별도로 연결되므로, 이메일과 다른 Google 계정을 선택해도 됩니다.
           </p>
           {configured === false && (
             <p className="text-xs text-warning">
@@ -205,6 +203,68 @@ function GoogleCalendarSection({ connected }: { connected: boolean }) {
           )}
           <Button onClick={connect} disabled={busy || configured === false}>
             {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "Google Calendar 연결"}
+          </Button>
+        </>
+      )}
+      <ErrorAlert>{error}</ErrorAlert>
+    </Card>
+  );
+}
+
+function GmailSection({ connected }: { connected: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    integrationsApi
+      .googleStatus()
+      .then((s) => setConfigured(s.configured))
+      .catch(() => setConfigured(false));
+    // Surface the callback outcome from the OAuth redirect.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gmail") === "not_configured") {
+      setError("Google 연동이 아직 설정되지 않았습니다. 위 'Google API 연결'에서 본인 Client ID/Secret을 먼저 입력하세요.");
+    } else if (params.get("gmail") === "error") {
+      setError("이메일 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  }, []);
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { auth_url } = await gmailApi.authorizeUrl();
+      window.location.href = auth_url;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "연결에 실패했습니다");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">이메일 (Gmail)</h2>
+      {connected ? (
+        <>
+          <p className="text-sm text-success">✓ 연결됨</p>
+          <Button variant="ghost" onClick={connect} disabled={busy}>
+            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "다시 연결"}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-text-tertiary">
+            연결하면 이메일 페이지에서 받은편지함/보낸편지함을 조회할 수 있습니다. Google Calendar와는 별도로
+            연결되므로, 캘린더와 다른 Google 계정을 선택해도 됩니다.
+          </p>
+          {configured === false && (
+            <p className="text-xs text-warning">
+              아직 Google API가 설정되지 않았습니다. 위 &quot;Google API 연결&quot;에서 본인 Client ID/Secret을 먼저 입력하세요.
+            </p>
+          )}
+          <Button onClick={connect} disabled={busy || configured === false}>
+            {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "이메일 연결"}
           </Button>
         </>
       )}

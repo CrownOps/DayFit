@@ -25,6 +25,13 @@ class User(Base):
     google_refresh_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
     google_calendar_connected: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Gmail is connected independently from Calendar so each can point at a
+    # different Google account (e.g. a personal Gmail inbox alongside a work
+    # Google Calendar) — separate OAuth tokens, separate consent flow.
+    gmail_oauth_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
+    gmail_refresh_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
+    gmail_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+
     gcs_pulse_api_token_encrypted: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # No FK constraint: invite_codes references users, so this is a soft back-reference

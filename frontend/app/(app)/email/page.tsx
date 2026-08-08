@@ -109,7 +109,7 @@ export default function EmailPage() {
         <Card>
           <p className="text-sm text-text-tertiary">
             메일을 불러올 수 없습니다. <Link href="/settings" className="text-accent underline">설정</Link>
-            에서 Google Calendar 연결(이메일 권한 포함)을 확인하세요.
+            에서 이메일(Gmail) 연결을 확인하세요.
           </p>
         </Card>
       ) : messages.length === 0 ? (

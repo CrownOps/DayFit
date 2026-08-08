@@ -44,6 +44,7 @@ class UserOut(BaseModel):
     is_admin: bool
     team_id: str
     google_calendar_connected: bool
+    gmail_connected: bool
 
     class Config:
         from_attributes = True

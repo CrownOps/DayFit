@@ -14,9 +14,7 @@ _FOLDER_LABELS = {"inbox": "INBOX", "sent": "SENT"}
 
 _METADATA_HEADERS = ["From", "To", "Subject", "Date"]
 
-_NOT_CONNECTED_DETAIL = (
-    "Gmail 권한이 없습니다. 설정에서 Google Calendar를 다시 연결해 이메일 권한을 추가하세요."
-)
+_NOT_CONNECTED_DETAIL = "Gmail 권한이 없습니다. 설정에서 이메일을 다시 연결하세요."
 
 
 class GmailError(Exception):
@@ -28,7 +26,7 @@ class GmailError(Exception):
 
 def _service(user: User, db: Session):
     try:
-        creds = get_google_credentials(user, db, GMAIL_SCOPES)
+        creds = get_google_credentials(user, db, GMAIL_SCOPES, purpose="gmail")
     except RefreshError:
         # The stored refresh_token doesn't cover gmail.readonly yet (user
         # hasn't reconnected since it was added) — Google rejects the refresh

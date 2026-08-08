@@ -28,13 +28,30 @@ logger = logging.getLogger(__name__)
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-# Requested together at the OAuth consent screen / code exchange, so a single
-# connection covers both. Refreshing a token must NOT declare this combined
-# set, though — Google rejects a refresh whose requested scope exceeds what
-# that specific refresh_token was actually granted (`invalid_scope`), which
-# would break Calendar for anyone who hasn't reconnected for Gmail yet. Each
-# caller of `get_google_credentials` below declares only the scope it needs.
-SCOPES = CALENDAR_SCOPES + GMAIL_SCOPES
+
+# Calendar and Gmail are connected independently — each has its own "purpose"
+# key, its own scope, its own OAuth round trip (so a user can pick a different
+# Google account in Google's account chooser for each), and its own token
+# columns on User (see `_TOKEN_FIELDS`). They still share the same registered
+# OAuth client (`resolve_google_config`) and callback URL.
+PURPOSE_SCOPES: dict[str, list[str]] = {
+    "calendar": CALENDAR_SCOPES,
+    "gmail": GMAIL_SCOPES,
+}
+
+# (access_token_field, refresh_token_field, connected_field) per purpose.
+_TOKEN_FIELDS: dict[str, tuple[str, str, str]] = {
+    "calendar": (
+        "google_oauth_token_encrypted",
+        "google_refresh_token_encrypted",
+        "google_calendar_connected",
+    ),
+    "gmail": (
+        "gmail_oauth_token_encrypted",
+        "gmail_refresh_token_encrypted",
+        "gmail_connected",
+    ),
+}
 
 
 class GoogleNotConfiguredError(Exception):
@@ -94,7 +111,7 @@ def resolve_google_config(
     return GoogleOAuthConfig(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri or "")
 
 
-def build_flow(config: GoogleOAuthConfig, state: str | None = None) -> Flow:
+def build_flow(config: GoogleOAuthConfig, scopes: list[str], state: str | None = None) -> Flow:
     client_config = {
         "web": {
             "client_id": config.client_id,
@@ -106,17 +123,23 @@ def build_flow(config: GoogleOAuthConfig, state: str | None = None) -> Flow:
     }
     return Flow.from_client_config(
         client_config,
-        scopes=SCOPES,
+        scopes=scopes,
         redirect_uri=config.redirect_uri,
         state=state,
     )
 
 
-def get_authorization_url(db: Session, user: User, request_redirect_uri: str | None = None) -> str:
+def get_authorization_url(
+    db: Session, user: User, request_redirect_uri: str | None = None, purpose: str = "calendar"
+) -> str:
     config = resolve_google_config(db, user, request_redirect_uri)
     if config is None or not config.redirect_uri:
         raise GoogleNotConfiguredError()
-    flow = build_flow(config, state=str(user.id))
+    scopes = PURPOSE_SCOPES[purpose]
+    # Encode the purpose into `state` so the shared callback knows which
+    # token columns to save into — and so each purpose can be connected to a
+    # different Google account (Google's account chooser is per auth request).
+    flow = build_flow(config, scopes, state=f"{user.id}:{purpose}")
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -125,18 +148,28 @@ def get_authorization_url(db: Session, user: User, request_redirect_uri: str | N
     return auth_url
 
 
+def _parse_state(state: str) -> tuple[int, str]:
+    user_id_str, sep, purpose = state.partition(":")
+    if not sep:
+        # Old-style state from a link that was already in flight when this
+        # shipped (no purpose suffix) — treat as calendar, the original behavior.
+        return int(state), "calendar"
+    return int(user_id_str), purpose
+
+
 def exchange_code_for_tokens(
     db: Session, code: str, state: str, request_redirect_uri: str | None = None
-) -> tuple[int, Credentials]:
-    # ``state`` is the user id set when the auth URL was built; resolve that
-    # user's own client to exchange the code (tokens are bound to it).
-    user = db.get(User, int(state))
+) -> tuple[int, str, Credentials]:
+    # ``state`` is "<user id>:<purpose>" set when the auth URL was built;
+    # resolve that user's own client to exchange the code (tokens are bound to it).
+    user_id, purpose = _parse_state(state)
+    user = db.get(User, user_id)
     if user is None:
         raise GoogleNotConfiguredError()
     config = resolve_google_config(db, user, request_redirect_uri)
     if config is None or not config.redirect_uri:
         raise GoogleNotConfiguredError()
-    flow = build_flow(config, state=state)
+    flow = build_flow(config, PURPOSE_SCOPES[purpose], state=state)
     flow.fetch_token(code=code)
     creds = flow.credentials
     if not creds.refresh_token:
@@ -144,25 +177,31 @@ def exchange_code_for_tokens(
         # means the user had already granted consent (Google only returns a
         # refresh token on first consent unless prompt=consent is forced).
         logger.warning("Google token exchange returned no refresh token for state=%s", state)
-    return int(state), creds
+    return user_id, purpose, creds
 
 
-def save_credentials(db: Session, user: User, creds: Credentials) -> None:
-    user.google_oauth_token_encrypted = encrypt_secret(creds.token)
+def save_credentials(db: Session, user: User, creds: Credentials, purpose: str = "calendar") -> None:
+    token_field, refresh_field, connected_field = _TOKEN_FIELDS[purpose]
+    setattr(user, token_field, encrypt_secret(creds.token))
     if creds.refresh_token:
-        user.google_refresh_token_encrypted = encrypt_secret(creds.refresh_token)
-    user.google_calendar_connected = True
+        setattr(user, refresh_field, encrypt_secret(creds.refresh_token))
+    setattr(user, connected_field, True)
     db.add(user)
     db.commit()
 
 
-def _load_credentials(user: User, config: GoogleOAuthConfig, scopes: list[str]) -> Credentials:
-    if not user.google_refresh_token_encrypted:
-        raise ValueError("User has not connected Google Calendar")
+def _load_credentials(
+    user: User, config: GoogleOAuthConfig, scopes: list[str], purpose: str = "calendar"
+) -> Credentials:
+    token_field, refresh_field, _ = _TOKEN_FIELDS[purpose]
+    refresh_token_encrypted = getattr(user, refresh_field)
+    if not refresh_token_encrypted:
+        raise ValueError(f"User has not connected Google ({purpose})")
 
+    token_encrypted = getattr(user, token_field)
     creds = Credentials(
-        token=decrypt_secret(user.google_oauth_token_encrypted) if user.google_oauth_token_encrypted else None,
-        refresh_token=decrypt_secret(user.google_refresh_token_encrypted),
+        token=decrypt_secret(token_encrypted) if token_encrypted else None,
+        refresh_token=decrypt_secret(refresh_token_encrypted),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=config.client_id,
         client_secret=config.client_secret,
@@ -173,22 +212,21 @@ def _load_credentials(user: User, config: GoogleOAuthConfig, scopes: list[str]) 
     return creds
 
 
-def get_google_credentials(user: User, db: Session, scopes: list[str] = CALENDAR_SCOPES) -> Credentials:
+def get_google_credentials(
+    user: User, db: Session, scopes: list[str] = CALENDAR_SCOPES, purpose: str = "calendar"
+) -> Credentials:
     """Load (and refresh if needed) this user's Google credentials for `scopes`.
 
-    Shared by every Google API surface (Calendar, Gmail, ...) since they all
-    ride on the same OAuth token — but `scopes` must be no wider than what was
-    actually granted, or Google rejects the refresh with `invalid_scope`
-    (users who haven't reconnected for Gmail only have CALENDAR_SCOPES on their
-    refresh_token). Defaults to CALENDAR_SCOPES since that's guaranteed to be
-    a subset for every connected user.
+    Calendar and Gmail are connected separately (`purpose`), each with its own
+    token columns, so each can be a different Google account.
     """
     config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
-    creds = _load_credentials(user, config, scopes)
+    creds = _load_credentials(user, config, scopes, purpose)
     if creds.token:
-        user.google_oauth_token_encrypted = encrypt_secret(creds.token)
+        token_field, _, _ = _TOKEN_FIELDS[purpose]
+        setattr(user, token_field, encrypt_secret(creds.token))
         db.add(user)
         db.commit()
     return creds

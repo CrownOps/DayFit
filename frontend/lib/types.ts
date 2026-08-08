@@ -7,6 +7,7 @@ export interface User {
   is_admin: boolean;
   team_id: string;
   google_calendar_connected: boolean;
+  gmail_connected: boolean;
 }
 
 export interface TokenResponse {

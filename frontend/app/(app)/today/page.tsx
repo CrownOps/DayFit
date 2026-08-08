@@ -513,8 +513,8 @@ function EventTasksSection({ eventId }: { eventId: number }) {
     load();
   }, [load]);
 
-  async function addTask(e: React.FormEvent) {
-    e.preventDefault();
+  async function addTask(e?: React.FormEvent) {
+    e?.preventDefault();
     if (!title.trim()) return;
     setBusy(true);
     setError(null);
@@ -604,17 +604,27 @@ function EventTasksSection({ eventId }: { eventId: number }) {
           ))}
         </div>
       )}
-      <form onSubmit={addTask} className="flex gap-2 pt-1">
+      {/* A plain <div>, not <form> — this already sits inside the event's own
+          <form onSubmit={save}> in EventModal, and a nested <form> is invalid
+          HTML: the browser drops the inner tag, so its "추가" button ended up
+          submitting (and closing) the outer event form instead of adding a task. */}
+      <div className="flex gap-2 pt-1">
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addTask();
+            }
+          }}
           placeholder="새 할일 추가"
           className="flex-1"
         />
-        <Button type="submit" variant="ghost" disabled={busy || !title.trim()}>
+        <Button type="button" variant="ghost" onClick={() => addTask()} disabled={busy || !title.trim()}>
           추가
         </Button>
-      </form>
+      </div>
       <ErrorAlert>{error}</ErrorAlert>
     </div>
   );
