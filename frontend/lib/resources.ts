@@ -1,5 +1,6 @@
 import { api } from "./api";
 import type {
+  AiSource,
   Book,
   BookInput,
   BookScope,
@@ -98,15 +99,20 @@ export const snippetsApi = {
     api<HeatmapDay[]>("/api/snippets/heatmap", { query: { year, month, scope } }),
   comment: (id: number, content: string) =>
     api<unknown>(`/api/snippets/${id}/comments`, { method: "POST", query: { content } }),
-  // AI 제안: reorganize a draft (does not save).
+  // AI 제안: reorganize a draft (does not save). `source` says which engine
+  // answered — GCS Pulse, or our own Claude fallback when Pulse is down.
   organize: (content: string) =>
-    api<{ date: string; organized_content: string }>("/api/snippets/organize", {
+    api<{ date: string; organized_content: string; source: AiSource }>("/api/snippets/organize", {
       method: "POST",
       body: { content },
     }),
-  // AI 채점: grade today's saved snippet (must be saved first).
-  feedback: () =>
-    api<{ date: string; ai_score: number | null; feedback: string | null }>("/api/snippets/feedback"),
+  // AI 채점: grade today's snippet (save it first — Pulse grades the stored
+  // copy). The body is what the Claude fallback grades if Pulse fails.
+  feedback: (content: string) =>
+    api<{ date: string; ai_score: number | null; feedback: string | null; source: AiSource }>(
+      "/api/snippets/feedback",
+      { method: "POST", body: { content } }
+    ),
 };
 
 export const teamApi = {

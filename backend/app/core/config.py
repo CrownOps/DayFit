@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:admin@example.com"
 
+    # Claude (Anthropic). 앱 공용 키 — 비어 있으면 AI 폴백이 꺼진다.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5"
+
     gcs_pulse_base_url: str = "https://api.1000.school"
     gcs_pulse_team_id: str = ""
 

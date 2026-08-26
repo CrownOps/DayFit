@@ -94,6 +94,9 @@ export interface Snippet {
   updated_at: string;
 }
 
+/** 어느 엔진이 AI 응답을 만들었는지. Pulse 실패 시 자체 Claude로 폴백된다. */
+export type AiSource = "gcs_pulse" | "claude";
+
 export interface HeatmapDay {
   date: string;
   written: boolean;

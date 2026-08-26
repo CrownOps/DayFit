@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { snippetsApi } from "@/lib/resources";
-import type { Snippet } from "@/lib/types";
+import type { AiSource, Snippet } from "@/lib/types";
 import { addDays, isoDate } from "@/lib/dates";
 import { ApiError } from "@/lib/api";
 import { Button, Card, ErrorAlert, Spinner, Textarea } from "@/components/ui";
@@ -22,11 +22,13 @@ export default function SnippetsPage() {
 
   // AI 제안 (organize) + AI 채점 (feedback) state for the write box.
   const [organizing, setOrganizing] = useState(false);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<{ text: string; source: AiSource } | null>(null);
   const [scoring, setScoring] = useState(false);
-  const [feedback, setFeedback] = useState<{ ai_score: number | null; feedback: string | null } | null>(
-    null
-  );
+  const [feedback, setFeedback] = useState<{
+    ai_score: number | null;
+    feedback: string | null;
+    source: AiSource;
+  } | null>(null);
 
   // Filters for the recent list (member is team-scope only).
   const [memberFilter, setMemberFilter] = useState<string>("all");
@@ -170,7 +172,7 @@ export default function SnippetsPage() {
         setError("AI가 정리한 내용을 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
-      setSuggestion(organized);
+      setSuggestion({ text: organized, source: res.source });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI 제안에 실패했습니다");
     } finally {
@@ -187,7 +189,7 @@ export default function SnippetsPage() {
     try {
       if (!myToday) await snippetsApi.create(draft);
       else if (draft !== myToday.content) await snippetsApi.update(myToday.id, draft);
-      const res = await snippetsApi.feedback();
+      const res = await snippetsApi.feedback(draft);
       setFeedback(res);
       await load();
     } catch (err) {
@@ -276,12 +278,15 @@ export default function SnippetsPage() {
           {suggestion !== null && (
             <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-accent">AI 제안 (정리본)</span>
+                <span className="text-xs font-semibold text-accent">
+                  AI 제안 (정리본)
+                  <SourceTag source={suggestion.source} />
+                </span>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => {
-                      setDraft(suggestion);
+                      setDraft(suggestion.text);
                       setSuggestion(null);
                     }}
                     className="text-xs font-medium text-accent hover:underline"
@@ -298,7 +303,7 @@ export default function SnippetsPage() {
                 </div>
               </div>
               <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text-primary">
-                {suggestion}
+                {suggestion.text}
               </p>
             </div>
           )}
@@ -408,11 +413,24 @@ export default function SnippetsPage() {
   );
 }
 
+/** GCS Pulse가 아니라 자체 Claude 폴백이 답한 경우에만 표시한다. */
+function SourceTag({ source }: { source: AiSource }) {
+  if (source !== "claude") return null;
+  return (
+    <span
+      title="GCS Pulse가 응답하지 않아 DayFit의 Claude로 생성했습니다"
+      className="ml-1.5 rounded-full border border-border bg-bg px-1.5 py-0.5 text-[10px] font-normal text-text-tertiary"
+    >
+      Claude 대체
+    </span>
+  );
+}
+
 function FeedbackPanel({
   result,
   onClose,
 }: {
-  result: { ai_score: number | null; feedback: string | null };
+  result: { ai_score: number | null; feedback: string | null; source: AiSource };
   onClose: () => void;
 }) {
   // `feedback` is a JSON string from GCS Pulse (e.g. {"total_score":86,"scores":{...},...}).
@@ -445,7 +463,10 @@ function FeedbackPanel({
   return (
     <div className="rounded-lg border border-accent-secondary/40 bg-accent-secondary/5 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-accent-secondary">AI 채점 결과</span>
+        <span className="text-xs font-semibold text-accent-secondary">
+          AI 채점 결과
+          <SourceTag source={result.source} />
+        </span>
         <button
           type="button"
           onClick={onClose}

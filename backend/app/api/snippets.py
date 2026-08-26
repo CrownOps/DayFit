@@ -1,3 +1,4 @@
+import logging
 from calendar import monthrange
 from datetime import date, timedelta
 
@@ -18,10 +19,28 @@ from app.schemas.snippet import (
     TeamHealthEntry,
 )
 from app.services import gcs_pulse_client as gcs
+from app.services import llm
 from app.services.gcs_pulse_client import GcsPulseError
 from app.services.snippet_parser import extract_ai_score, extract_condition_score
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["snippets"])
+
+
+def _fallback(call, what: str) -> str | None:
+    """Run a Claude fallback, or return None when it is unavailable/failed.
+
+    A failing fallback must not replace the upstream error the user actually
+    needs to see, so every failure here is swallowed and logged.
+    """
+    if not llm.is_configured():
+        return None
+    try:
+        return call()
+    except llm.LlmError:
+        logger.warning("Claude fallback for %s failed", what, exc_info=True)
+        return None
 
 
 def _to_snippet_out(item: dict) -> SnippetOut:
@@ -66,27 +85,73 @@ def create_snippet(payload: SnippetCreate, user: User = Depends(get_current_user
 
 @router.post("/api/snippets/organize", response_model=SnippetOrganizeOut)
 def organize_snippet(payload: SnippetCreate, user: User = Depends(get_current_user)):
-    """AI 제안: return an AI-reorganized version of the draft (does not save)."""
+    """AI 제안: return an AI-reorganized version of the draft (does not save).
+
+    GCS Pulse runs the LLM; when it is unavailable (or answers with nothing) we
+    fall back to calling Claude ourselves so the feature keeps working. With no
+    ANTHROPIC_API_KEY configured the fallback is skipped and the upstream error
+    surfaces unchanged.
+    """
     try:
         item = gcs.organize_daily_snippet(user, payload.content)
+        return SnippetOrganizeOut(
+            date=item["date"], organized_content=item["organized_content"], source="gcs_pulse"
+        )
     except GcsPulseError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
-    return SnippetOrganizeOut(date=item["date"], organized_content=item["organized_content"])
+        organized = _fallback(lambda: llm.organize_snippet(payload.content), "organize")
+        if organized is None:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+        return SnippetOrganizeOut(
+            date=date.today(), organized_content=organized, source="claude"
+        )
 
 
 @router.get("/api/snippets/feedback", response_model=SnippetFeedbackOut)
 def snippet_feedback(user: User = Depends(get_current_user)):
-    """AI 채점: grade the user's saved snippet for today and return the score."""
+    """AI 채점 (GCS Pulse only).
+
+    Kept for clients cached before the POST variant shipped — a PWA can hold an
+    old bundle. New callers should POST the draft so the Claude fallback has
+    something to grade.
+    """
     try:
         item = gcs.generate_daily_snippet_feedback(user)
     except GcsPulseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     feedback = item.get("feedback")
     return SnippetFeedbackOut(
-        date=item["date"],
-        ai_score=extract_ai_score(feedback),
-        feedback=feedback,
+        date=item["date"], ai_score=extract_ai_score(feedback), feedback=feedback
     )
+
+
+@router.post("/api/snippets/feedback", response_model=SnippetFeedbackOut)
+def snippet_feedback_with_content(
+    payload: SnippetCreate, user: User = Depends(get_current_user)
+):
+    """AI 채점: grade today's snippet, falling back to Claude when Pulse fails.
+
+    Pulse grades the snippet it has stored (the caller saves first), so it
+    ignores the posted content — the body is what the fallback grades.
+    """
+    try:
+        item = gcs.generate_daily_snippet_feedback(user)
+        feedback = item.get("feedback")
+        return SnippetFeedbackOut(
+            date=item["date"],
+            ai_score=extract_ai_score(feedback),
+            feedback=feedback,
+            source="gcs_pulse",
+        )
+    except GcsPulseError as exc:
+        graded = _fallback(lambda: llm.grade_snippet(payload.content), "grade")
+        if graded is None:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+        return SnippetFeedbackOut(
+            date=date.today(),
+            ai_score=extract_ai_score(graded),
+            feedback=graded,
+            source="claude",
+        )
 
 
 @router.put("/api/snippets/{snippet_id}", response_model=SnippetOut)
