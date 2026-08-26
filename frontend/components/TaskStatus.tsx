@@ -30,6 +30,14 @@ export const STATUS_META: Record<
   },
 };
 
+// Auto-sort order for the 할 일 board: in-progress work first, then what
+// hasn't been started, then everything already finished.
+export const STATUS_SORT_RANK: Record<TaskStatus, number> = {
+  in_progress: 0,
+  todo: 1,
+  done: 2,
+};
+
 export function nextStatus(status: TaskStatus): TaskStatus {
   const i = STATUS_ORDER.indexOf(status);
   return STATUS_ORDER[(i + 1) % STATUS_ORDER.length];

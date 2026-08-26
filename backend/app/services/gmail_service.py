@@ -1,4 +1,5 @@
 import base64
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -15,6 +16,8 @@ _FOLDER_LABELS = {"inbox": "INBOX", "sent": "SENT"}
 _METADATA_HEADERS = ["From", "To", "Subject", "Date"]
 
 _NOT_CONNECTED_DETAIL = "Gmail 권한이 없습니다. 설정에서 이메일을 다시 연결하세요."
+
+logger = logging.getLogger(__name__)
 
 
 class GmailError(Exception):
@@ -100,6 +103,24 @@ def _summary(message: dict) -> dict:
         "date": date_iso,
         "unread": "UNREAD" in message.get("labelIds", []),
     }
+
+
+def get_connected_address(user: User, db: Session) -> str | None:
+    """Gmail address of the account currently connected for email, or None.
+
+    Purely informational (shown on the 이메일 page so the user can tell which
+    account they are reading), so any failure degrades to None instead of
+    breaking the page.
+    """
+    if not user.gmail_connected:
+        return None
+    try:
+        profile = _service(user, db).users().getProfile(userId="me").execute()
+    except Exception:
+        logger.warning("Failed to read Gmail profile for user_id=%s", user.id, exc_info=True)
+        return None
+    address = profile.get("emailAddress")
+    return address if isinstance(address, str) else None
 
 
 def list_messages(

@@ -184,7 +184,8 @@ export default function TodayPage() {
         <div className="flex items-center gap-2 shrink-0">
           {/* day/week/month toggle */}
           <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
-            {(["day", "week", "month"] as const).map((m) => (
+            {/* 월간 → 주간 → 일간 순 (넓은 범위에서 좁은 범위로) */}
+            {(["month", "week", "day"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setViewMode(m)}
@@ -193,7 +194,7 @@ export default function TodayPage() {
                   viewMode === m ? "bg-accent text-white" : "text-text-secondary"
                 )}
               >
-                {m === "day" ? "일" : m === "week" ? "주" : "월"}
+                {m === "month" ? "월간" : m === "week" ? "주간" : "일간"}
               </button>
             ))}
           </div>

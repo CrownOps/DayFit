@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { calendarApi, gmailApi, integrationsApi, pushApi, usersApi } from "@/lib/resources";
-import type { MyGoogleIntegration, PushSubscriptionRow } from "@/lib/types";
+import { calendarApi, gmailApi, integrationsApi, pushApi, teamSpaceApi, usersApi } from "@/lib/resources";
+import type { MyGoogleIntegration, PushSubscriptionRow, TeamEditPolicy, TeamPermissions } from "@/lib/types";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
 import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { clsx } from "@/lib/clsx";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import {
   getExistingSubscription,
@@ -40,6 +41,7 @@ export default function SettingsPage() {
       <GoogleCalendarSection connected={user?.google_calendar_connected ?? false} />
       <GmailSection connected={user?.gmail_connected ?? false} />
       <GcsPulseSection />
+      {user?.is_admin && <TeamPermissionsSection />}
       {user?.is_admin && (
         <Card className="space-y-2">
           <h2 className="text-sm font-semibold text-text-primary">관리자</h2>
@@ -267,6 +269,76 @@ function GmailSection({ connected }: { connected: boolean }) {
             {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "이메일 연결"}
           </Button>
         </>
+      )}
+      <ErrorAlert>{error}</ErrorAlert>
+    </Card>
+  );
+}
+
+/** 팀룰 · 비전/미션의 수정 권한 (관리자 전용 설정).
+ *
+ * 정책이 "팀원 전체"면 팀원 누구나 해당 항목을 수정할 수 있고, "관리자만"이면
+ * 관리자만 수정할 수 있다. 관리자는 정책과 무관하게 항상 수정 가능하다. */
+function TeamPermissionsSection() {
+  const [perms, setPerms] = useState<TeamPermissions | null>(null);
+  const [busy, setBusy] = useState<keyof TeamPermissions | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    teamSpaceApi
+      .permissions()
+      .then(setPerms)
+      .catch((err) => setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다"));
+  }, []);
+
+  async function setPolicy(field: "rules_edit_policy" | "profile_edit_policy", value: TeamEditPolicy) {
+    if (!perms || perms[field] === value || busy) return;
+    setBusy(field);
+    setError(null);
+    try {
+      setPerms(await teamSpaceApi.updatePermissions({ [field]: value }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "저장에 실패했습니다");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const ROWS: { field: "rules_edit_policy" | "profile_edit_policy"; label: string }[] = [
+    { field: "rules_edit_policy", label: "팀룰 수정" },
+    { field: "profile_edit_policy", label: "비전 · 미션 수정" },
+  ];
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">팀 스페이스 권한</h2>
+      <p className="text-xs text-text-tertiary">
+        팀룰과 비전·미션을 누가 수정할 수 있는지 정합니다. 관리자는 설정과 무관하게 항상 수정할 수 있습니다.
+      </p>
+      {perms === null ? (
+        <Spinner className="h-4 w-4" />
+      ) : (
+        ROWS.map((row) => (
+          <div key={row.field} className="flex items-center justify-between gap-2">
+            <span className="text-sm text-text-secondary">{row.label}</span>
+            <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+              {(["admin", "member"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPolicy(row.field, value)}
+                  disabled={busy !== null}
+                  className={clsx(
+                    "px-3 py-1 rounded-md text-sm transition-colors disabled:opacity-60",
+                    perms[row.field] === value ? "bg-accent text-white" : "text-text-secondary"
+                  )}
+                >
+                  {value === "admin" ? "관리자만" : "팀원 전체"}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))
       )}
       <ErrorAlert>{error}</ErrorAlert>
     </Card>

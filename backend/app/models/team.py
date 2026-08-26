@@ -19,6 +19,15 @@ class Team(Base):
     vision: Mapped[str] = mapped_column(Text, default="")
     mission: Mapped[str] = mapped_column(Text, default="")
 
+    # Who may edit each section: "admin" (관리자만) or "member" (팀원 전체).
+    # Admins can always edit, and can change these policies in 설정.
+    rules_edit_policy: Mapped[str] = mapped_column(
+        String(16), default="admin", server_default="admin"
+    )
+    profile_edit_policy: Mapped[str] = mapped_column(
+        String(16), default="admin", server_default="admin"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
