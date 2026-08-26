@@ -258,18 +258,11 @@ export function RoomsWidget() {
     let cancelled = false;
     async function load() {
       try {
-        const rooms = await meetingRoomsApi.list();
-        const today = isoDate(new Date());
-        const lists = await Promise.all(
-          rooms.map((room) =>
-            meetingRoomsApi
-              .reservations(room.id, today)
-              .then((list) => list.map((r) => ({ ...r, roomName: room.name })))
-              .catch(() => [])
-          )
-        );
+        // One request for the whole day. This used to fetch the room list and
+        // then one request per room, so a team with five rooms paid six round
+        // trips for this one widget.
+        const all = await meetingRoomsApi.allReservations(isoDate(new Date()));
         const now = new Date();
-        const all = lists.flat();
         const next = all
           .filter((r) => new Date(r.end_at) > now)
           .sort((a, b) => a.start_at.localeCompare(b.start_at))[0];
@@ -277,7 +270,12 @@ export function RoomsWidget() {
         setState({
           count: all.length,
           next: next
-            ? { room: next.roomName, start_at: next.start_at, end_at: next.end_at, purpose: next.purpose }
+            ? {
+                room: next.meeting_room_name ?? "회의실",
+                start_at: next.start_at,
+                end_at: next.end_at,
+                purpose: next.purpose,
+              }
             : null,
         });
       } catch {

@@ -1,3 +1,5 @@
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +16,7 @@ from app.schemas.meeting_room import (
     MeetingRoomOut,
     MeetingRoomReservationCreate,
     MeetingRoomReservationOut,
+    MeetingRoomReservationWithRoomOut,
     MessageOut,
 )
 from app.schemas.recurring_reservation import RecurringReservationCreate, RecurringReservationOut
@@ -21,7 +24,15 @@ from app.services import gcs_pulse_client as gcs
 from app.services import recurring_reservation_service
 from app.services.gcs_pulse_client import GcsPulseError
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/meeting-rooms", tags=["meeting-rooms"])
+
+# GCS Pulse only exposes reservations per room, so the day view still needs one
+# upstream call per room — but they are independent, so they go out together
+# instead of one after another. Bounded because the API host is a single small
+# instance.
+_ROOM_FETCH_WORKERS = 5
 
 
 @router.get("", response_model=list[MeetingRoomOut])
@@ -30,6 +41,43 @@ def list_rooms(user: User = Depends(get_current_user)):
         return gcs.list_meeting_rooms(user)
     except GcsPulseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get("/reservations", response_model=list[MeetingRoomReservationWithRoomOut])
+def list_all_reservations(
+    date: date = Query(...),
+    user: User = Depends(get_current_user),
+):
+    """Every room's reservations for one day, in a single request.
+
+    The dashboard used to fetch the room list and then one request per room, so
+    a team with five rooms paid six browser round trips for one small widget.
+    One room failing yields an empty list for that room rather than losing the
+    whole day.
+    """
+    try:
+        rooms = gcs.list_meeting_rooms(user)
+    except GcsPulseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    if not rooms:
+        return []
+
+    day = date.isoformat()
+
+    def fetch(room: dict) -> list[dict]:
+        try:
+            reservations = gcs.list_room_reservations(user, room["id"], day)
+        except GcsPulseError:
+            logger.warning("Failed to list reservations for room %s", room.get("id"), exc_info=True)
+            return []
+        for reservation in reservations:
+            reservation["meeting_room_name"] = room.get("name")
+        return reservations
+
+    with ThreadPoolExecutor(max_workers=min(_ROOM_FETCH_WORKERS, len(rooms))) as pool:
+        per_room = list(pool.map(fetch, rooms))
+
+    return [reservation for reservations in per_room for reservation in reservations]
 
 
 @router.get("/{room_id}/reservations", response_model=list[MeetingRoomReservationOut])

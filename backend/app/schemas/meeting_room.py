@@ -24,6 +24,16 @@ class MeetingRoomReservationOut(BaseModel):
     can_cancel: bool = False
 
 
+class MeetingRoomReservationWithRoomOut(MeetingRoomReservationOut):
+    """하루치 전체 예약을 한 번에 돌려줄 때 쓰는 형태.
+
+    회의실 이름을 같이 실어 보내서, 호출한 쪽이 회의실 목록을 따로 받아
+    맞춰볼 필요가 없게 한다.
+    """
+
+    meeting_room_name: str | None = None
+
+
 class MeetingRoomReservationCreate(BaseModel):
     start_at: datetime
     end_at: datetime

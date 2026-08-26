@@ -23,6 +23,7 @@ from app.api import (
     users,
 )
 from app.core.config import settings
+from app.services.gcs_pulse_client import close_client as close_gcs_pulse_client
 from app.services.notification_scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     stop_scheduler()
+    # Release the pooled GCS Pulse connections held for the process lifetime.
+    close_gcs_pulse_client()
 
 
 app = FastAPI(title="DayFit API", lifespan=lifespan)

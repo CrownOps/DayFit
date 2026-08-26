@@ -21,6 +21,7 @@ import type {
   InviteCode,
   MeetingRoom,
   MeetingRoomReservation,
+  MeetingRoomReservationWithRoom,
   PushSubscriptionRow,
   RecurringReservationInput,
   RecurringReservationRule,
@@ -204,6 +205,10 @@ export const meetingRoomsApi = {
   list: () => api<MeetingRoom[]>("/api/meeting-rooms"),
   reservations: (roomId: number, date: string) =>
     api<MeetingRoomReservation[]>(`/api/meeting-rooms/${roomId}/reservations`, { query: { date } }),
+  // Every room's reservations for one day in a single request — the dashboard
+  // widget would otherwise fetch the room list plus one request per room.
+  allReservations: (date: string) =>
+    api<MeetingRoomReservationWithRoom[]>("/api/meeting-rooms/reservations", { query: { date } }),
   reserve: (roomId: number, body: { start_at: string; end_at: string; purpose?: string | null }) =>
     api<MeetingRoomReservation>(`/api/meeting-rooms/${roomId}/reservations`, { method: "POST", body }),
   cancel: (reservationId: number) =>

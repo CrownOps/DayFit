@@ -128,6 +128,11 @@ export interface MeetingRoomReservation {
   can_cancel: boolean;
 }
 
+/** A day's reservations across every room, fetched in one request. */
+export interface MeetingRoomReservationWithRoom extends MeetingRoomReservation {
+  meeting_room_name: string | null;
+}
+
 export type EmailFolder = "inbox" | "sent";
 
 export interface EmailSummary {
