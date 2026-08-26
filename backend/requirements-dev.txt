@@ -1,0 +1,4 @@
+# 개발/테스트 전용. 프로덕션 이미지는 requirements.txt만 설치한다(Dockerfile 참고).
+-r requirements.txt
+
+pytest==8.3.4

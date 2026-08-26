@@ -51,6 +51,17 @@ venv/Scripts/python -m uvicorn app.main:app --port 8000
 venv/Scripts/python scripts/seed_admin.py <email> <password>
 ```
 
+### 백엔드 테스트
+
+```bash
+cd backend
+venv/Scripts/pip install -r requirements-dev.txt
+venv/Scripts/python -m pytest
+```
+
+인메모리 SQLite로 돌기 때문에 Postgres도, 외부 API 토큰도 필요 없다. Google/GCS
+Pulse 호출은 페이크로 대체되며, "요청이 몇 번 나갔는지"까지 검증한다.
+
 ### 2. 프론트엔드
 
 ```bash
