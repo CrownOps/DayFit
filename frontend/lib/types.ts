@@ -112,6 +112,28 @@ export interface TeamHealthEntry {
   content_preview: string | null;
 }
 
+/** 홈 화면이 한 번에 받아오는 묶음. 구역별로 독립적으로 실패할 수 있다. */
+export interface Dashboard {
+  vision: TeamProfile | null;
+  events: CalendarEvent[];
+  habits: Habit[];
+  habit_logs: HabitLog[];
+  latest_snippet: Snippet | null;
+  team_health: TeamHealthEntry[];
+  room_reservations: MeetingRoomReservationWithRoom[];
+  // 불러오지 못한 구역 이름. 빈 결과와 실패를 구분하는 데 쓴다.
+  failed: DashboardSection[];
+  generated_at: string;
+}
+
+export type DashboardSection =
+  | "vision"
+  | "events"
+  | "habits"
+  | "snippet"
+  | "team_health"
+  | "rooms";
+
 export interface MeetingRoom {
   id: number;
   name: string;

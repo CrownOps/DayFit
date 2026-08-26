@@ -65,10 +65,13 @@ def list_snippets(
     scope: str = Query("own", pattern="^(own|team)$"),
     from_date: str | None = None,
     to_date: str | None = None,
+    limit: int = Query(200, ge=1, le=500, description="가져올 최대 개수"),
     user: User = Depends(get_current_user),
 ):
     try:
-        result = gcs.list_daily_snippets(user, scope=scope, from_date=from_date, to_date=to_date, limit=200)
+        result = gcs.list_daily_snippets(
+            user, scope=scope, from_date=from_date, to_date=to_date, limit=limit
+        )
     except GcsPulseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     return [_to_snippet_out(item) for item in result.get("items", [])]
@@ -213,11 +216,19 @@ def comment_on_snippet(snippet_id: int, content: str, user: User = Depends(get_c
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
-@router.get("/api/team/health", response_model=list[TeamHealthEntry])
-def team_health(
-    days: int = Query(14, ge=1, le=90),
-    user: User = Depends(get_current_user),
-):
+def load_latest_snippet(user: User) -> SnippetOut | None:
+    """The user's most recent snippet, or None.
+
+    Asks for a single row rather than months of history — the dashboard widget
+    only shows the latest date and score. (GCS Pulse defaults to the last 30
+    days and newest-first when no range is given.)
+    """
+    result = gcs.list_daily_snippets(user, scope="own", limit=1)
+    items = result.get("items", [])
+    return _to_snippet_out(items[0]) if items else None
+
+
+def load_team_health(user: User, days: int = 14) -> list[TeamHealthEntry]:
     """Latest health-check per team member over the last `days` days.
 
     Shows every member who has written at least one snippet in the window
@@ -226,10 +237,9 @@ def team_health(
     today = date.today()
     from_date = (today - timedelta(days=days)).isoformat()
     today_iso = today.isoformat()
-    try:
-        result = gcs.list_daily_snippets(user, scope="team", from_date=from_date, to_date=today_iso, limit=500)
-    except GcsPulseError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    result = gcs.list_daily_snippets(
+        user, scope="team", from_date=from_date, to_date=today_iso, limit=500
+    )
 
     latest_by_user: dict[int, dict] = {}
     for item in result.get("items", []):
@@ -253,3 +263,14 @@ def team_health(
         )
     entries.sort(key=lambda e: ((e.condition_score is None), e.condition_score or 0))
     return entries
+
+
+@router.get("/api/team/health", response_model=list[TeamHealthEntry])
+def team_health(
+    days: int = Query(14, ge=1, le=90),
+    user: User = Depends(get_current_user),
+):
+    try:
+        return load_team_health(user, days)
+    except GcsPulseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)

@@ -18,9 +18,9 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app import models  # noqa: E402,F401  (모든 매퍼 등록 → create_all)
+from app.core import database  # noqa: E402
 from app.core.database import Base, get_db  # noqa: E402
 from app.core.deps import get_current_user  # noqa: E402
 from app.main import app  # noqa: E402
@@ -30,22 +30,29 @@ TEAM_ID = "TEST_TEAM"
 
 
 @pytest.fixture
-def db():
-    """테스트마다 새 인메모리 SQLite.
+def db(tmp_path):
+    """테스트마다 새 SQLite 파일.
 
-    StaticPool로 커넥션을 하나만 유지해야 인메모리 DB가 세션 간에 살아남는다.
+    인메모리 + StaticPool을 쓰면 커넥션이 하나뿐이라, 대시보드처럼 워커 스레드에서
+    따로 세션을 여는 코드가 같은 커넥션을 동시에 쓰게 된다. 파일 DB로 두면 스레드마다
+    자기 커넥션을 잡는다.
+
+    `SessionLocal`도 이 엔진으로 돌려놓는다 — 요청 세션은 get_db override로
+    주입되지만, 스스로 세션을 여는 코드(워커)는 SessionLocal을 직접 쓴다.
     """
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        f"sqlite+pysqlite:///{(tmp_path / 'test.db').as_posix()}",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    database.SessionLocal.configure(bind=engine)
+
     session = sessionmaker(bind=engine)()
     try:
         yield session
     finally:
         session.close()
+        database.SessionLocal.configure(bind=database.engine)
         engine.dispose()
 
 

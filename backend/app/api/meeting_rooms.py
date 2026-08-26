@@ -43,26 +43,15 @@ def list_rooms(user: User = Depends(get_current_user)):
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
-@router.get("/reservations", response_model=list[MeetingRoomReservationWithRoomOut])
-def list_all_reservations(
-    date: date = Query(...),
-    user: User = Depends(get_current_user),
-):
-    """Every room's reservations for one day, in a single request.
+def load_day_reservations(user: User, day: str) -> list[dict]:
+    """Every room's reservations for `day` (ISO date), fetched concurrently.
 
-    The dashboard used to fetch the room list and then one request per room, so
-    a team with five rooms paid six browser round trips for one small widget.
-    One room failing yields an empty list for that room rather than losing the
-    whole day.
+    Raises GcsPulseError only when the room list itself fails; a single room
+    failing yields an empty list for that room.
     """
-    try:
-        rooms = gcs.list_meeting_rooms(user)
-    except GcsPulseError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    rooms = gcs.list_meeting_rooms(user)
     if not rooms:
         return []
-
-    day = date.isoformat()
 
     def fetch(room: dict) -> list[dict]:
         try:
@@ -78,6 +67,22 @@ def list_all_reservations(
         per_room = list(pool.map(fetch, rooms))
 
     return [reservation for reservations in per_room for reservation in reservations]
+
+
+@router.get("/reservations", response_model=list[MeetingRoomReservationWithRoomOut])
+def list_all_reservations(
+    date: date = Query(...),
+    user: User = Depends(get_current_user),
+):
+    """Every room's reservations for one day, in a single request.
+
+    The dashboard used to fetch the room list and then one request per room, so
+    a team with five rooms paid six browser round trips for one small widget.
+    """
+    try:
+        return load_day_reservations(user, date.isoformat())
+    except GcsPulseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
 @router.get("/{room_id}/reservations", response_model=list[MeetingRoomReservationOut])

@@ -9,6 +9,7 @@ import type {
   BottleneckAction,
   BottleneckInput,
   CalendarEvent,
+  Dashboard,
   EmailDetail,
   EmailFolder,
   EmailListOut,
@@ -56,6 +57,14 @@ export const calendarApi = {
   remove: (id: number) => api<void>(`/api/calendar/events/${id}`, { method: "DELETE" }),
 };
 
+// ---- Dashboard (홈 화면 한 번에 조회) ----
+export const dashboardApi = {
+  // `date`는 사용자 로컬 날짜, `start`/`end`는 오늘 일정 조회 범위. 서버(UTC)가
+  // 스스로 계산하면 KST 사용자와 하루가 어긋나므로 클라이언트가 넘긴다.
+  get: (date: string, start: string, end: string) =>
+    api<Dashboard>("/api/dashboard", { query: { date, start, end } }),
+};
+
 // ---- Gmail (read-only) ----
 export const gmailApi = {
   authorizeUrl: (returnTo?: string) =>
@@ -89,8 +98,8 @@ export const habitsApi = {
 
 // ---- Snippets ----
 export const snippetsApi = {
-  list: (scope: "own" | "team", from_date?: string, to_date?: string) =>
-    api<Snippet[]>("/api/snippets", { query: { scope, from_date, to_date } }),
+  list: (scope: "own" | "team", from_date?: string, to_date?: string, limit?: number) =>
+    api<Snippet[]>("/api/snippets", { query: { scope, from_date, to_date, limit } }),
   create: (content: string) => api<Snippet>("/api/snippets", { method: "POST", body: { content } }),
   update: (id: number, content: string) =>
     api<Snippet>(`/api/snippets/${id}`, { method: "PUT", body: { content } }),

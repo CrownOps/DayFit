@@ -168,17 +168,14 @@ def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:
     )
 
 
-@router.get("/events", response_model=list[EventOut])
-def get_events(
-    start: datetime = Query(default_factory=lambda: datetime.now(timezone.utc)),
-    end: datetime | None = None,
-    refresh: bool = Query(False, description="캐시를 무시하고 Google에서 다시 가져온다"),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if end is None:
-        end = start + timedelta(days=1)
+def load_events(
+    db: Session, user: User, start: datetime, end: datetime, refresh: bool = False
+) -> list[CalendarEventCache]:
+    """Events in [start, end), syncing from Google first when the cache is cold.
 
+    Shared by the /events route and the dashboard aggregate so both go through
+    the same TTL-gated sync.
+    """
     # Overlap semantics (start_at < end AND end_at > start) so multi-day events
     # that began before the window still appear — matching how the Google API
     # interprets timeMin/timeMax. The delete uses the same window as the fetch,
@@ -199,7 +196,7 @@ def get_events(
         _mark_synced(db, user, start, end)
         db.commit()
 
-    cached = (
+    return (
         db.query(CalendarEventCache)
         .filter(
             CalendarEventCache.user_id == user.id,
@@ -209,7 +206,19 @@ def get_events(
         .order_by(CalendarEventCache.start_at)
         .all()
     )
-    return cached
+
+
+@router.get("/events", response_model=list[EventOut])
+def get_events(
+    start: datetime = Query(default_factory=lambda: datetime.now(timezone.utc)),
+    end: datetime | None = None,
+    refresh: bool = Query(False, description="캐시를 무시하고 Google에서 다시 가져온다"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if end is None:
+        end = start + timedelta(days=1)
+    return load_events(db, user, start, end, refresh)
 
 
 @router.post("/events", response_model=EventOut)
