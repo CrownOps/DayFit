@@ -175,6 +175,12 @@ export interface EmailDetail extends EmailSummary {
   body_text: string;
 }
 
+/** AI가 메일 한 통에서 뽑아낸 요약과 할 일. */
+export interface EmailBrief {
+  summary: string;
+  action_items: string[];
+}
+
 /** Which Google account the 이메일 page currently reads from. */
 export interface GmailStatus {
   connected: boolean;

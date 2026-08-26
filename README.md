@@ -80,8 +80,9 @@ npm run dev                    # http://localhost:3000
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — [docs/Google_Calendar_연동_가이드.md](docs/Google_Calendar_연동_가이드.md) 참고
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — 웹 푸시 키 (`web-push generate-vapid-keys`)
 - `GCS_PULSE_BASE_URL`, `GCS_PULSE_TEAM_ID` — GCS Pulse 팀 스코프
-- `ANTHROPIC_API_KEY` — (선택) 설정하면 GCS Pulse의 AI 제안·채점이 실패했을 때 자체 Claude 호출로 폴백한다.
-  비워 두면 폴백 없이 지금까지와 동일하게 동작한다. 모델은 `ANTHROPIC_MODEL`(기본 `claude-opus-5`).
+- `ANTHROPIC_API_KEY` — (선택) Claude 연동. 모델은 `ANTHROPIC_MODEL`(기본 `claude-opus-5`).
+  - GCS Pulse의 AI 제안·채점이 실패하면 자체 Claude 호출로 **폴백**한다. 비워 두면 폴백 없이 지금까지와 동일.
+  - 이메일 페이지의 **AI 요약·할 일 추출**은 상류 경로가 없어 이 키가 있어야만 동작한다.
 
 > ⚠️ `.env`, VAPID 개인키 등 비밀정보는 커밋하지 않는다 (`.gitignore` 적용됨).
 

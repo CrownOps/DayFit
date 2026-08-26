@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { gmailApi } from "@/lib/resources";
-import type { EmailDetail, EmailFolder, EmailSummary, GmailStatus } from "@/lib/types";
+import { gmailApi, tasksApi } from "@/lib/resources";
+import type { EmailBrief, EmailDetail, EmailFolder, EmailSummary, GmailStatus } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { Button, Card, ErrorAlert, Spinner } from "@/components/ui";
 import { Modal } from "@/components/Modal";
@@ -34,6 +34,10 @@ export default function EmailPage() {
   // account — and switched — right from this page.
   const [account, setAccount] = useState<GmailStatus | null>(null);
   const [connecting, setConnecting] = useState(false);
+
+  // 어느 메일의 요약인지 함께 들고 있어야, 다른 메일을 열었을 때 이전 요약이
+  // 남아 보이지 않는다.
+  const [briefFor, setBriefFor] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<EmailDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -128,6 +132,7 @@ export default function EmailPage() {
 
   async function openMessage(id: string) {
     setModalOpen(true);
+    setBriefFor(null);
     setDetailLoading(true);
     setDetailError(null);
     setSelected(null);
@@ -233,6 +238,11 @@ export default function EmailPage() {
               </div>
               <div>{formatDate(selected.date)}</div>
             </div>
+            <EmailBriefPanel
+              messageId={selected.id}
+              active={briefFor === selected.id}
+              onRun={() => setBriefFor(selected.id)}
+            />
             <div className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm text-text-primary border-t border-border pt-3">
               {selected.body_text || selected.snippet}
             </div>
@@ -304,5 +314,151 @@ function AccountBar({
         </Button>
       </div>
     </Card>
+  );
+}
+
+/** AI 요약 + 추출된 할 일. 항목을 골라 이번 주 할 일로 보낼 수 있다. */
+function EmailBriefPanel({
+  messageId,
+  active,
+  onRun,
+}: {
+  messageId: string;
+  active: boolean;
+  onRun: () => void;
+}) {
+  const [brief, setBrief] = useState<EmailBrief | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 이미 할 일로 보낸 항목 — 다시 눌러 중복 추가하지 않도록 표시해 둔다.
+  const [added, setAdded] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [sending, setSending] = useState(false);
+
+  async function run() {
+    onRun();
+    setLoading(true);
+    setError(null);
+    setBrief(null);
+    setAdded(new Set());
+    try {
+      const result = await gmailApi.brief(messageId);
+      setBrief(result);
+      // 기본은 전부 선택 — 대개 다 넣고 싶어 한다.
+      setPicked(new Set(result.action_items.map((_, i) => i)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "요약에 실패했습니다");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function addPicked() {
+    if (!brief || picked.size === 0 || sending) return;
+    setSending(true);
+    setError(null);
+    const done = new Set(added);
+    try {
+      for (const index of [...picked].sort((a, b) => a - b)) {
+        if (done.has(index)) continue;
+        await tasksApi.create(brief.action_items[index], "week");
+        done.add(index);
+      }
+      setPicked(new Set());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "할 일 추가에 실패했습니다");
+    } finally {
+      setAdded(done);
+      setSending(false);
+    }
+  }
+
+  function toggle(index: number) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  if (!active) {
+    return (
+      <div className="border-t border-border pt-3">
+        <Button variant="ghost" onClick={run}>
+          ✨ AI 요약 · 할 일 추출
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-accent/40 bg-accent/5 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-accent">AI 요약</span>
+        {!loading && (
+          <button type="button" onClick={run} className="text-xs text-accent hover:underline">
+            다시 요약
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-2">
+          <Spinner className="h-4 w-4" />
+          <span className="text-sm text-text-tertiary">메일을 읽는 중…</span>
+        </div>
+      ) : (
+        <>
+          <ErrorAlert>{error}</ErrorAlert>
+          {brief && (
+            <>
+              <p className="whitespace-pre-wrap text-sm text-text-primary">{brief.summary}</p>
+
+              {brief.action_items.length === 0 ? (
+                <p className="text-xs text-text-tertiary">할 일로 뽑을 만한 내용은 없습니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-text-secondary">할 일 후보</div>
+                  <ul className="space-y-1">
+                    {brief.action_items.map((item, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={picked.has(index)}
+                          disabled={added.has(index)}
+                          onChange={() => toggle(index)}
+                          className="mt-0.5 accent-[var(--color-accent)]"
+                        />
+                        <span
+                          className={clsx(
+                            "flex-1 min-w-0 break-words",
+                            added.has(index) ? "text-text-tertiary line-through" : "text-text-primary"
+                          )}
+                        >
+                          {item}
+                        </span>
+                        {added.has(index) && (
+                          <span className="shrink-0 text-xs text-success">추가됨</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-end">
+                    <Button onClick={addPicked} disabled={sending || picked.size === 0}>
+                      {sending ? (
+                        <Spinner className="h-4 w-4 border-white/40 border-t-white" />
+                      ) : (
+                        `이번 주 할 일로 추가 (${picked.size})`
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }

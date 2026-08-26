@@ -10,6 +10,7 @@ import type {
   BottleneckInput,
   CalendarEvent,
   Dashboard,
+  EmailBrief,
   EmailDetail,
   EmailFolder,
   EmailListOut,
@@ -72,6 +73,9 @@ export const gmailApi = {
   list: (folder: EmailFolder, pageToken?: string | null) =>
     api<EmailListOut>("/api/gmail/messages", { query: { folder, page_token: pageToken } }),
   get: (id: string) => api<EmailDetail>(`/api/gmail/messages/${id}`),
+  // AI 요약 + 할 일 추출. 서버에 ANTHROPIC_API_KEY가 있어야 동작한다.
+  brief: (id: string) =>
+    api<EmailBrief>(`/api/gmail/messages/${id}/brief`, { method: "POST" }),
   // Which Google account is connected for email (independent of Calendar).
   status: () => api<GmailStatus>("/api/gmail/status"),
   // Drop the stored Gmail tokens so a different account can be connected.

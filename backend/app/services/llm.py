@@ -14,6 +14,7 @@ import re
 from threading import Lock
 
 import anthropic
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 # 스니펫 정리·채점은 짧은 글 한 편을 다루는 작업이라 출력이 길지 않다. 넉넉히
 # 잡되, 스트리밍 없이도 타임아웃에 걸리지 않는 범위로 둔다.
 _MAX_TOKENS = 8000
+
+# 메일 본문 상한. 넘으면 조용히 잘라내지 않고 오류로 알린다 — 잘린 줄 모르고
+# 요약을 믿는 쪽이 더 나쁘다. 100k 토큰 남짓에 해당한다.
+_MAX_EMAIL_CHARS = 400_000
 
 _client: anthropic.Anthropic | None = None
 _client_lock = Lock()
@@ -101,6 +106,64 @@ JSON 객체 하나만 출력한다. 코드펜스나 설명을 붙이지 마라. 
 {"total_score": <0-100 정수>, "scores": {"specificity": <0-25>, "progress": <0-25>, "blockers": <0-25>, "next_steps": <0-25>}, "comment": "<한국어 두세 문장 총평>"}"""
 
 _JSON_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+
+
+class EmailBrief(BaseModel):
+    """메일 한 통에서 뽑아내는 것."""
+
+    summary: str = Field(description="핵심을 담은 한국어 요약. 2~4문장.")
+    action_items: list[str] = Field(
+        description=(
+            "이 메일을 받은 사람이 해야 할 일. 각 항목은 동사로 끝나는 짧은 한국어 문장. "
+            "할 일이 없으면 빈 배열."
+        )
+    )
+
+
+_EMAIL_SYSTEM = """너는 업무 메일을 정리해주는 비서다.
+
+- 메일 내용에 없는 사실을 지어내지 마라.
+- 요약은 받는 사람이 알아야 할 것 위주로, 인사말·서명·법적 고지는 빼라.
+- 할 일은 "이 메일을 받은 사람이" 해야 하는 것만 뽑는다. 발신자가 하겠다고 한 일이나
+  단순 공지는 할 일이 아니다. 마감이 있으면 문장에 함께 적는다.
+- 광고·뉴스레터처럼 할 일이 없는 메일이면 action_items는 빈 배열로 둔다."""
+
+
+def summarize_email(subject: str, sender: str, body: str) -> EmailBrief:
+    """메일 요약 + 할 일 추출.
+
+    구조화된 출력을 쓰므로 응답이 스키마에 맞는 것이 보장된다 — 채점 쪽처럼
+    JSON을 손으로 파싱하고 코드펜스를 벗겨낼 필요가 없다.
+    """
+    if not is_configured():
+        raise LlmError("ANTHROPIC_API_KEY가 설정되어 있지 않습니다")
+    if len(body) > _MAX_EMAIL_CHARS:
+        raise LlmError("메일이 너무 길어 요약할 수 없습니다")
+
+    user_content = f"제목: {subject}\n보낸사람: {sender}\n\n본문:\n{body}"
+    try:
+        response = _get_client().messages.parse(
+            model=settings.anthropic_model,
+            max_tokens=_MAX_TOKENS,
+            thinking={"type": "adaptive"},
+            system=_EMAIL_SYSTEM,
+            messages=[{"role": "user", "content": user_content}],
+            output_format=EmailBrief,
+        )
+    except anthropic.APIStatusError as exc:
+        raise LlmError(f"Claude 오류 ({exc.status_code})") from exc
+    except anthropic.APIConnectionError as exc:
+        raise LlmError("Claude에 연결하지 못했습니다") from exc
+
+    if response.stop_reason == "refusal":
+        raise LlmError("Claude가 요청을 거절했습니다")
+
+    brief = response.parsed_output
+    if brief is None:
+        raise LlmError("Claude가 요약을 돌려주지 않았습니다")
+    # 빈 문자열 항목은 UI에서 빈 줄로 보이므로 걸러낸다.
+    brief.action_items = [item.strip() for item in brief.action_items if item.strip()]
+    return brief
 
 
 def organize_snippet(content: str) -> str:
