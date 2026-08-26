@@ -239,15 +239,22 @@ def clear_credentials(db: Session, user: User, purpose: str = "calendar") -> Non
 
 def _load_credentials(
     user: User, config: GoogleOAuthConfig, scopes: list[str], purpose: str = "calendar"
-) -> Credentials:
+) -> tuple[Credentials, str | None]:
+    """``(credentials, the access token that was stored)``.
+
+    The stored token comes back so the caller can tell whether a refresh
+    actually produced a new one — Fernet ciphertext differs on every encrypt,
+    so comparing the encrypted columns would never match.
+    """
     token_field, refresh_field, _ = _TOKEN_FIELDS[purpose]
     refresh_token_encrypted = getattr(user, refresh_field)
     if not refresh_token_encrypted:
         raise ValueError(f"User has not connected Google ({purpose})")
 
     token_encrypted = getattr(user, token_field)
+    stored_token = decrypt_secret(token_encrypted) if token_encrypted else None
     creds = Credentials(
-        token=decrypt_secret(token_encrypted) if token_encrypted else None,
+        token=stored_token,
         refresh_token=decrypt_secret(refresh_token_encrypted),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=config.client_id,
@@ -256,7 +263,7 @@ def _load_credentials(
     )
     if not creds.valid:
         creds.refresh(Request())
-    return creds
+    return creds, stored_token
 
 
 def get_google_credentials(
@@ -266,12 +273,17 @@ def get_google_credentials(
 
     Calendar and Gmail are connected separately (`purpose`), each with its own
     token columns, so each can be a different Google account.
+
+    The token is written back only when Google actually issued a new one. This
+    used to re-encrypt and COMMIT on every call, so every calendar and mail
+    request carried a database write it almost never needed — access tokens
+    last about an hour.
     """
     config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
-    creds = _load_credentials(user, config, scopes, purpose)
-    if creds.token:
+    creds, stored_token = _load_credentials(user, config, scopes, purpose)
+    if creds.token and creds.token != stored_token:
         token_field, _, _ = _TOKEN_FIELDS[purpose]
         setattr(user, token_field, encrypt_secret(creds.token))
         db.add(user)
