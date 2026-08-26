@@ -32,18 +32,24 @@ def _anchor_for(scope: str) -> date:
 
 def _rollover_today_tasks(db: Session, user: User) -> None:
     """Carry unfinished "today" tasks forward to today so they don't vanish when
-    the day rolls over; completed tasks are left on their original day."""
+    the day rolls over; completed tasks are left on their original day.
+
+    This runs on every 오늘 할 일 listing — the home screen and the 할 일 page —
+    but there is something to move only on the first listing after midnight.
+    Checking first keeps the common case to one indexed SELECT instead of an
+    UPDATE plus a COMMIT that touch nothing.
+    """
     today = date.today()
-    (
-        db.query(Task)
-        .filter(
-            Task.user_id == user.id,
-            Task.scope == "today",
-            Task.anchor_date < today,
-            Task.status != "done",
-        )
-        .update({Task.anchor_date: today}, synchronize_session=False)
+    stale = (
+        Task.user_id == user.id,
+        Task.scope == "today",
+        Task.anchor_date < today,
+        Task.status != "done",
     )
+    if db.query(Task.id).filter(*stale).first() is None:
+        return
+
+    db.query(Task).filter(*stale).update({Task.anchor_date: today}, synchronize_session=False)
     db.commit()
 
 

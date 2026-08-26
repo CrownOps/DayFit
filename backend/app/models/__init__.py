@@ -1,6 +1,6 @@
 from app.models.book import Book
 from app.models.bottleneck import Bottleneck, BottleneckAction
-from app.models.calendar import CalendarEventCache
+from app.models.calendar import CalendarEventCache, CalendarSyncState
 from app.models.habit import Habit, HabitLog
 from app.models.integration import IntegrationSettings
 from app.models.push import NotificationSchedule, PushSubscription
@@ -20,6 +20,7 @@ __all__ = [
     "Bottleneck",
     "BottleneckAction",
     "CalendarEventCache",
+    "CalendarSyncState",
     "Habit",
     "HabitLog",
     "PushSubscription",

@@ -239,15 +239,22 @@ def clear_credentials(db: Session, user: User, purpose: str = "calendar") -> Non
 
 def _load_credentials(
     user: User, config: GoogleOAuthConfig, scopes: list[str], purpose: str = "calendar"
-) -> Credentials:
+) -> tuple[Credentials, str | None]:
+    """``(credentials, the access token that was stored)``.
+
+    The stored token comes back so the caller can tell whether a refresh
+    actually produced a new one — Fernet ciphertext differs on every encrypt,
+    so comparing the encrypted columns would never match.
+    """
     token_field, refresh_field, _ = _TOKEN_FIELDS[purpose]
     refresh_token_encrypted = getattr(user, refresh_field)
     if not refresh_token_encrypted:
         raise ValueError(f"User has not connected Google ({purpose})")
 
     token_encrypted = getattr(user, token_field)
+    stored_token = decrypt_secret(token_encrypted) if token_encrypted else None
     creds = Credentials(
-        token=decrypt_secret(token_encrypted) if token_encrypted else None,
+        token=stored_token,
         refresh_token=decrypt_secret(refresh_token_encrypted),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=config.client_id,
@@ -256,7 +263,7 @@ def _load_credentials(
     )
     if not creds.valid:
         creds.refresh(Request())
-    return creds
+    return creds, stored_token
 
 
 def get_google_credentials(
@@ -266,12 +273,17 @@ def get_google_credentials(
 
     Calendar and Gmail are connected separately (`purpose`), each with its own
     token columns, so each can be a different Google account.
+
+    The token is written back only when Google actually issued a new one. This
+    used to re-encrypt and COMMIT on every call, so every calendar and mail
+    request carried a database write it almost never needed — access tokens
+    last about an hour.
     """
     config = resolve_google_config(db, user)
     if config is None:
         raise GoogleNotConfiguredError()
-    creds = _load_credentials(user, config, scopes, purpose)
-    if creds.token:
+    creds, stored_token = _load_credentials(user, config, scopes, purpose)
+    if creds.token and creds.token != stored_token:
         token_field, _, _ = _TOKEN_FIELDS[purpose]
         setattr(user, token_field, encrypt_secret(creds.token))
         db.add(user)
@@ -287,6 +299,22 @@ def get_calendar_service(user: User, db: Session):
 NO_REMINDERS = {"useDefault": False, "overrides": []}
 
 
+def _visible_calendars(service) -> list[tuple[str, bool]]:
+    """``(calendar id, read only)`` for every calendar the user keeps visible.
+
+    Respects the user's Google visibility choices: calendars they've hidden
+    (holidays, week numbers, …) are skipped. Primary is always included.
+    """
+    calendars = service.calendarList().list().execute().get("items", [])
+    visible: list[tuple[str, bool]] = []
+    for cal in calendars:
+        if not cal.get("primary") and not cal.get("selected"):
+            continue
+        access = cal.get("accessRole", "reader")
+        visible.append((cal["id"], access in ("reader", "freeBusyReader")))
+    return visible
+
+
 def list_events(user: User, db: Session, time_min: datetime, time_max: datetime) -> list[dict]:
     """Events across every calendar the user has enabled — not just their own
     primary calendar, but also invited/shared calendars they keep visible.
@@ -294,41 +322,45 @@ def list_events(user: User, db: Session, time_min: datetime, time_max: datetime)
     Each returned item is annotated with ``_calendarId`` (which calendar it came
     from) and ``_readOnly`` (True when the user only has read access), so the
     caller can route edits and mark invited events as non-editable.
+
+    The per-calendar ``events.list`` calls go out as a single batched request
+    rather than one sequential round trip each — a user with a handful of
+    shared calendars used to pay for every one of them on every page load.
     """
     service = get_calendar_service(user, db)
     time_min_iso = time_min.astimezone(timezone.utc).isoformat()
     time_max_iso = time_max.astimezone(timezone.utc).isoformat()
 
-    calendars = service.calendarList().list().execute().get("items", [])
+    calendars = _visible_calendars(service)
+    if not calendars:
+        return []
+    read_only_by_id = dict(calendars)
+
     items: list[dict] = []
-    for cal in calendars:
-        # Respect the user's Google visibility choices: skip calendars they've
-        # hidden (holidays, week numbers, etc.). Primary is always included.
-        if not cal.get("primary") and not cal.get("selected"):
-            continue
-        cal_id = cal["id"]
-        access = cal.get("accessRole", "reader")
-        read_only = access in ("reader", "freeBusyReader")
-        try:
-            result = (
-                service.events()
-                .list(
-                    calendarId=cal_id,
-                    timeMin=time_min_iso,
-                    timeMax=time_max_iso,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-        except Exception:
+
+    def collect(request_id, response, exception):
+        if exception is not None:
             # One inaccessible calendar shouldn't fail the whole request.
-            logger.warning("Failed to list events for calendar %s", cal_id, exc_info=True)
-            continue
-        for item in result.get("items", []):
-            item["_calendarId"] = cal_id
-            item["_readOnly"] = read_only
+            logger.warning("Failed to list events for calendar %s: %s", request_id, exception)
+            return
+        for item in response.get("items", []):
+            item["_calendarId"] = request_id
+            item["_readOnly"] = read_only_by_id[request_id]
             items.append(item)
+
+    batch = service.new_batch_http_request(callback=collect)
+    for cal_id, _ in calendars:
+        batch.add(
+            service.events().list(
+                calendarId=cal_id,
+                timeMin=time_min_iso,
+                timeMax=time_max_iso,
+                singleEvents=True,
+                orderBy="startTime",
+            ),
+            request_id=cal_id,
+        )
+    batch.execute()
     return items
 
 

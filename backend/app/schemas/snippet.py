@@ -1,6 +1,10 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+# 어느 엔진이 답했는지. Pulse가 실패하면 자체 Claude 호출로 폴백한다.
+AiSource = Literal["gcs_pulse", "claude"]
 
 
 class SnippetCreate(BaseModel):
@@ -34,6 +38,7 @@ class SnippetOrganizeOut(BaseModel):
 
     date: date
     organized_content: str
+    source: AiSource = "gcs_pulse"
 
 
 class SnippetFeedbackOut(BaseModel):
@@ -42,6 +47,7 @@ class SnippetFeedbackOut(BaseModel):
     date: date
     ai_score: int | None = None
     feedback: str | None = None
+    source: AiSource = "gcs_pulse"
 
 
 class HeatmapDay(BaseModel):

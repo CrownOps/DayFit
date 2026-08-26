@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from threading import Lock
 
 import httpx
 
@@ -15,27 +16,61 @@ class GcsPulseError(Exception):
         super().__init__(detail)
 
 
-def _client(user: User, timeout: float = 15.0) -> httpx.Client:
+_DEFAULT_TIMEOUT = 15.0
+# The AI endpoints run an LLM upstream, so they get a much longer leash.
+_AI_TIMEOUT = 120.0
+
+# One pooled client for the whole process. Building a client per call meant a
+# fresh TCP + TLS handshake on every single request to GCS Pulse — paid again
+# for each snippet load, each meeting room, each token-quota check. Keeping the
+# connection pool alive removes that handshake from all but the first call.
+#
+# The Authorization header is deliberately NOT set on the client: the pool is
+# shared across users, so credentials go per request instead.
+_pool: httpx.Client | None = None
+_pool_lock = Lock()
+
+
+def _pooled_client() -> httpx.Client:
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = httpx.Client(
+                    base_url=settings.gcs_pulse_base_url,
+                    timeout=_DEFAULT_TIMEOUT,
+                    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                )
+    return _pool
+
+
+def close_client() -> None:
+    """Release the pooled connections (called on app shutdown)."""
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
+
+
+def _auth_headers(user: User) -> dict[str, str]:
     if not user.gcs_pulse_api_token_encrypted:
         raise GcsPulseError(400, "GCS Pulse API 토큰이 등록되어 있지 않습니다")
-
-    token = decrypt_secret(user.gcs_pulse_api_token_encrypted)
-    return httpx.Client(
-        base_url=settings.gcs_pulse_base_url,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=timeout,
-    )
+    return {"Authorization": f"Bearer {decrypt_secret(user.gcs_pulse_api_token_encrypted)}"}
 
 
-def _send(client: httpx.Client, method: str, url: str, **kwargs) -> httpx.Response:
-    """Issue a request, turning transport-level failures into GcsPulseError.
+def _request(
+    user: User, method: str, url: str, *, timeout: float = _DEFAULT_TIMEOUT, **kwargs
+) -> httpx.Response:
+    """Issue a request on the shared pool, as `user`.
 
-    Without this an upstream timeout or a dropped connection escapes as a raw
-    ``httpx`` exception, which Starlette turns into a bare 500 — the browser
-    then sees a CORS error instead of the real reason.
+    Transport-level failures become GcsPulseError: an unhandled ``httpx``
+    exception escapes as a bare 500 from Starlette, which the browser then
+    reports as a CORS error instead of the real reason.
     """
+    headers = _auth_headers(user)
     try:
-        return client.request(method, url, **kwargs)
+        return _pooled_client().request(method, url, headers=headers, timeout=timeout, **kwargs)
     except httpx.TimeoutException:
         raise GcsPulseError(
             504, "GCS Pulse 응답이 너무 오래 걸려 요청이 취소되었습니다. 잠시 후 다시 시도해 주세요."
@@ -123,37 +158,32 @@ def list_daily_snippets(
     if to_date:
         params["to_date"] = to_date
 
-    with _client(user) as client:
-        resp = _send(client, "GET", "/daily-snippets", params=params)
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "GET", "/daily-snippets", params=params)
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def get_daily_snippet(user: User, snippet_id: int) -> dict:
-    with _client(user) as client:
-        resp = _send(client, "GET", f"/daily-snippets/{snippet_id}")
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "GET", f"/daily-snippets/{snippet_id}")
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def create_daily_snippet(user: User, content: str) -> dict:
-    with _client(user) as client:
-        resp = _send(client, "POST", "/daily-snippets", json={"content": content})
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "POST", "/daily-snippets", json={"content": content})
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def update_daily_snippet(user: User, snippet_id: int, content: str) -> dict:
-    with _client(user) as client:
-        resp = _send(client, "PUT", f"/daily-snippets/{snippet_id}", json={"content": content})
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "PUT", f"/daily-snippets/{snippet_id}", json={"content": content})
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def delete_daily_snippet(user: User, snippet_id: int) -> None:
-    with _client(user) as client:
-        resp = _send(client, "DELETE", f"/daily-snippets/{snippet_id}")
-        _raise_for_status(resp)
+    resp = _request(user, "DELETE", f"/daily-snippets/{snippet_id}")
+    _raise_for_status(resp)
 
 
 def organize_daily_snippet(user: User, content: str) -> dict:
@@ -166,16 +196,16 @@ def organize_daily_snippet(user: User, content: str) -> dict:
 
     The GCS Pulse side runs an LLM, so allow a generous timeout.
     """
-    with _client(user, timeout=120.0) as client:
-        resp = _send(
-            client,
-            "POST",
-            "/daily-snippets/organize",
-            params={"stream": "false"},
-            json={"content": content},
-        )
-        _raise_for_status(resp)
-        organized, snippet_date = _ai_payload(resp, "organized_content")
+    resp = _request(
+        user,
+        "POST",
+        "/daily-snippets/organize",
+        timeout=_AI_TIMEOUT,
+        params={"stream": "false"},
+        json={"content": content},
+    )
+    _raise_for_status(resp)
+    organized, snippet_date = _ai_payload(resp, "organized_content")
 
     if not organized.strip():
         raise GcsPulseError(502, "AI가 정리한 내용을 받지 못했습니다. 잠시 후 다시 시도해 주세요.")
@@ -188,10 +218,11 @@ def generate_daily_snippet_feedback(user: User) -> dict:
     Operates on the user's already-saved snippet for today (no body), so the
     caller must have created/updated today's snippet first.
     """
-    with _client(user, timeout=120.0) as client:
-        resp = _send(client, "GET", "/daily-snippets/feedback", params={"stream": "false"})
-        _raise_for_status(resp)
-        feedback, snippet_date = _ai_payload(resp, "feedback")
+    resp = _request(
+        user, "GET", "/daily-snippets/feedback", timeout=_AI_TIMEOUT, params={"stream": "false"}
+    )
+    _raise_for_status(resp)
+    feedback, snippet_date = _ai_payload(resp, "feedback")
 
     if not feedback.strip():
         raise GcsPulseError(502, "AI 채점 결과를 받지 못했습니다. 잠시 후 다시 시도해 주세요.")
@@ -199,45 +230,40 @@ def generate_daily_snippet_feedback(user: User) -> dict:
 
 
 def create_comment(user: User, daily_snippet_id: int, content: str) -> dict:
-    with _client(user) as client:
-        resp = _send(
-            client, "POST", "/comments", json={"content": content, "daily_snippet_id": daily_snippet_id}
-        )
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(
+        user, "POST", "/comments", json={"content": content, "daily_snippet_id": daily_snippet_id}
+    )
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def get_token_usage(user: User) -> dict:
-    with _client(user) as client:
-        resp = _send(client, "GET", "/users/me/token-usage")
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "GET", "/users/me/token-usage")
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def list_meeting_rooms(user: User) -> list[dict]:
-    with _client(user) as client:
-        resp = _send(client, "GET", "/meeting-rooms")
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "GET", "/meeting-rooms")
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def list_room_reservations(user: User, room_id: int, date: str) -> list[dict]:
-    with _client(user) as client:
-        resp = _send(client, "GET", f"/meeting-rooms/{room_id}/reservations", params={"date": date})
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(user, "GET", f"/meeting-rooms/{room_id}/reservations", params={"date": date})
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def create_room_reservation(user: User, room_id: int, start_at: str, end_at: str, purpose: str | None) -> dict:
-    with _client(user) as client:
-        resp = _send(
-            client,
-            "POST",
-            f"/meeting-rooms/{room_id}/reservations",
-            json={"start_at": start_at, "end_at": end_at, "purpose": purpose},
-        )
-        _raise_for_status(resp)
-        return resp.json()
+    resp = _request(
+        user,
+        "POST",
+        f"/meeting-rooms/{room_id}/reservations",
+        json={"start_at": start_at, "end_at": end_at, "purpose": purpose},
+    )
+    _raise_for_status(resp)
+    return resp.json()
 
 
 def cancel_room_reservation(user: User, reservation_id: int) -> None:
@@ -246,6 +272,5 @@ def cancel_room_reservation(user: User, reservation_id: int) -> None:
     # JSON-decode error on every cancel and silently aborted the whole
     # request (including the loop in recurring_reservation_service.cancel_rule,
     # which left the recurring rule stuck "active").
-    with _client(user) as client:
-        resp = _send(client, "DELETE", f"/meeting-rooms/reservations/{reservation_id}")
-        _raise_for_status(resp)
+    resp = _request(user, "DELETE", f"/meeting-rooms/reservations/{reservation_id}")
+    _raise_for_status(resp)

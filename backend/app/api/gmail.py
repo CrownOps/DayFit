@@ -5,9 +5,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.calendar import GoogleAuthUrlOut
-from app.schemas.gmail import EmailDetail, EmailListOut, Folder, GmailStatusOut
+from app.schemas.gmail import EmailBriefOut, EmailDetail, EmailListOut, Folder, GmailStatusOut
 from app.services import gmail_service
 from app.services import google_calendar as gcal
+from app.services import llm
 from app.services.gmail_service import GmailError
 from app.services.google_calendar import GoogleNotConfiguredError
 
@@ -87,3 +88,39 @@ def get_message(
         raise HTTPException(status_code=400, detail=_NOT_CONNECTED_DETAIL)
     except GmailError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.post("/messages/{message_id}/brief", response_model=EmailBriefOut)
+def summarize_message(
+    message_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """메일 한 통을 요약하고 할 일을 뽑아낸다.
+
+    스니펫 쪽과 달리 상류(GCS Pulse) 경로가 없어서 Claude가 유일한 수단이다 —
+    키가 없으면 폴백이 아니라 그냥 쓸 수 없는 기능이므로 그렇게 알린다.
+    """
+    if not llm.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="AI 요약이 설정되어 있지 않습니다. 서버에 ANTHROPIC_API_KEY를 등록해야 합니다.",
+        )
+    if not user.gmail_connected:
+        raise HTTPException(status_code=400, detail=_NOT_CONNECTED_DETAIL)
+
+    try:
+        message = gmail_service.get_message(user, db, message_id)
+    except GoogleNotConfiguredError:
+        raise HTTPException(status_code=400, detail=_NOT_CONNECTED_DETAIL)
+    except GmailError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+    # 본문이 비어 있는 메일(첨부만 있는 경우 등)은 미리보기라도 넘긴다.
+    body = message.get("body_text") or message.get("snippet") or ""
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="요약할 본문이 없는 메일입니다")
+
+    try:
+        brief = llm.summarize_email(message.get("subject", ""), message.get("from_", ""), body)
+    except llm.LlmError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return EmailBriefOut(summary=brief.summary, action_items=brief.action_items)

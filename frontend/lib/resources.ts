@@ -1,5 +1,6 @@
 import { api } from "./api";
 import type {
+  AiSource,
   Book,
   BookInput,
   BookScope,
@@ -8,6 +9,8 @@ import type {
   BottleneckAction,
   BottleneckInput,
   CalendarEvent,
+  Dashboard,
+  EmailBrief,
   EmailDetail,
   EmailFolder,
   EmailListOut,
@@ -21,6 +24,7 @@ import type {
   InviteCode,
   MeetingRoom,
   MeetingRoomReservation,
+  MeetingRoomReservationWithRoom,
   PushSubscriptionRow,
   RecurringReservationInput,
   RecurringReservationRule,
@@ -42,12 +46,24 @@ export const calendarApi = {
   // (defaults to /settings on the server).
   authorizeUrl: (returnTo?: string) =>
     api<{ auth_url: string }>("/api/calendar/oauth/authorize", { query: { return_to: returnTo } }),
-  listEvents: (start: string, end: string) =>
-    api<CalendarEvent[]>("/api/calendar/events", { query: { start, end } }),
+  // The server serves a recently-synced window straight from its cache;
+  // `refresh` forces a fresh pull from Google.
+  listEvents: (start: string, end: string, refresh = false) =>
+    api<CalendarEvent[]>("/api/calendar/events", {
+      query: { start, end, refresh: refresh || undefined },
+    }),
   create: (body: EventInput) => api<CalendarEvent>("/api/calendar/events", { method: "POST", body }),
   update: (id: number, body: Partial<EventInput>) =>
     api<CalendarEvent>(`/api/calendar/events/${id}`, { method: "PATCH", body }),
   remove: (id: number) => api<void>(`/api/calendar/events/${id}`, { method: "DELETE" }),
+};
+
+// ---- Dashboard (홈 화면 한 번에 조회) ----
+export const dashboardApi = {
+  // `date`는 사용자 로컬 날짜, `start`/`end`는 오늘 일정 조회 범위. 서버(UTC)가
+  // 스스로 계산하면 KST 사용자와 하루가 어긋나므로 클라이언트가 넘긴다.
+  get: (date: string, start: string, end: string) =>
+    api<Dashboard>("/api/dashboard", { query: { date, start, end } }),
 };
 
 // ---- Gmail (read-only) ----
@@ -57,6 +73,9 @@ export const gmailApi = {
   list: (folder: EmailFolder, pageToken?: string | null) =>
     api<EmailListOut>("/api/gmail/messages", { query: { folder, page_token: pageToken } }),
   get: (id: string) => api<EmailDetail>(`/api/gmail/messages/${id}`),
+  // AI 요약 + 할 일 추출. 서버에 ANTHROPIC_API_KEY가 있어야 동작한다.
+  brief: (id: string) =>
+    api<EmailBrief>(`/api/gmail/messages/${id}/brief`, { method: "POST" }),
   // Which Google account is connected for email (independent of Calendar).
   status: () => api<GmailStatus>("/api/gmail/status"),
   // Drop the stored Gmail tokens so a different account can be connected.
@@ -83,8 +102,8 @@ export const habitsApi = {
 
 // ---- Snippets ----
 export const snippetsApi = {
-  list: (scope: "own" | "team", from_date?: string, to_date?: string) =>
-    api<Snippet[]>("/api/snippets", { query: { scope, from_date, to_date } }),
+  list: (scope: "own" | "team", from_date?: string, to_date?: string, limit?: number) =>
+    api<Snippet[]>("/api/snippets", { query: { scope, from_date, to_date, limit } }),
   create: (content: string) => api<Snippet>("/api/snippets", { method: "POST", body: { content } }),
   update: (id: number, content: string) =>
     api<Snippet>(`/api/snippets/${id}`, { method: "PUT", body: { content } }),
@@ -93,15 +112,20 @@ export const snippetsApi = {
     api<HeatmapDay[]>("/api/snippets/heatmap", { query: { year, month, scope } }),
   comment: (id: number, content: string) =>
     api<unknown>(`/api/snippets/${id}/comments`, { method: "POST", query: { content } }),
-  // AI 제안: reorganize a draft (does not save).
+  // AI 제안: reorganize a draft (does not save). `source` says which engine
+  // answered — GCS Pulse, or our own Claude fallback when Pulse is down.
   organize: (content: string) =>
-    api<{ date: string; organized_content: string }>("/api/snippets/organize", {
+    api<{ date: string; organized_content: string; source: AiSource }>("/api/snippets/organize", {
       method: "POST",
       body: { content },
     }),
-  // AI 채점: grade today's saved snippet (must be saved first).
-  feedback: () =>
-    api<{ date: string; ai_score: number | null; feedback: string | null }>("/api/snippets/feedback"),
+  // AI 채점: grade today's snippet (save it first — Pulse grades the stored
+  // copy). The body is what the Claude fallback grades if Pulse fails.
+  feedback: (content: string) =>
+    api<{ date: string; ai_score: number | null; feedback: string | null; source: AiSource }>(
+      "/api/snippets/feedback",
+      { method: "POST", body: { content } }
+    ),
 };
 
 export const teamApi = {
@@ -200,6 +224,10 @@ export const meetingRoomsApi = {
   list: () => api<MeetingRoom[]>("/api/meeting-rooms"),
   reservations: (roomId: number, date: string) =>
     api<MeetingRoomReservation[]>(`/api/meeting-rooms/${roomId}/reservations`, { query: { date } }),
+  // Every room's reservations for one day in a single request — the dashboard
+  // widget would otherwise fetch the room list plus one request per room.
+  allReservations: (date: string) =>
+    api<MeetingRoomReservationWithRoom[]>("/api/meeting-rooms/reservations", { query: { date } }),
   reserve: (roomId: number, body: { start_at: string; end_at: string; purpose?: string | null }) =>
     api<MeetingRoomReservation>(`/api/meeting-rooms/${roomId}/reservations`, { method: "POST", body }),
   cancel: (reservationId: number) =>

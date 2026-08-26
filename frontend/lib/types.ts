@@ -94,6 +94,9 @@ export interface Snippet {
   updated_at: string;
 }
 
+/** 어느 엔진이 AI 응답을 만들었는지. Pulse 실패 시 자체 Claude로 폴백된다. */
+export type AiSource = "gcs_pulse" | "claude";
+
 export interface HeatmapDay {
   date: string;
   written: boolean;
@@ -108,6 +111,28 @@ export interface TeamHealthEntry {
   has_snippet_today: boolean;
   content_preview: string | null;
 }
+
+/** 홈 화면이 한 번에 받아오는 묶음. 구역별로 독립적으로 실패할 수 있다. */
+export interface Dashboard {
+  vision: TeamProfile | null;
+  events: CalendarEvent[];
+  habits: Habit[];
+  habit_logs: HabitLog[];
+  latest_snippet: Snippet | null;
+  team_health: TeamHealthEntry[];
+  room_reservations: MeetingRoomReservationWithRoom[];
+  // 불러오지 못한 구역 이름. 빈 결과와 실패를 구분하는 데 쓴다.
+  failed: DashboardSection[];
+  generated_at: string;
+}
+
+export type DashboardSection =
+  | "vision"
+  | "events"
+  | "habits"
+  | "snippet"
+  | "team_health"
+  | "rooms";
 
 export interface MeetingRoom {
   id: number;
@@ -128,6 +153,11 @@ export interface MeetingRoomReservation {
   can_cancel: boolean;
 }
 
+/** A day's reservations across every room, fetched in one request. */
+export interface MeetingRoomReservationWithRoom extends MeetingRoomReservation {
+  meeting_room_name: string | null;
+}
+
 export type EmailFolder = "inbox" | "sent";
 
 export interface EmailSummary {
@@ -143,6 +173,12 @@ export interface EmailSummary {
 export interface EmailDetail extends EmailSummary {
   to_: string;
   body_text: string;
+}
+
+/** AI가 메일 한 통에서 뽑아낸 요약과 할 일. */
+export interface EmailBrief {
+  summary: string;
+  action_items: string[];
 }
 
 /** Which Google account the 이메일 page currently reads from. */

@@ -32,3 +32,23 @@ class CalendarEventCache(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CalendarSyncState(Base):
+    """When a window of the user's Google calendar was last pulled.
+
+    ``calendar_events_cache`` alone can't answer "have we synced this range?" —
+    an empty range and a never-synced range look identical. One row per synced
+    window lets a request that is already covered by a recent sync be served
+    straight from the cache instead of paying a Google round trip every time
+    the user changes date or switches 월간/주간/일간.
+    """
+
+    __tablename__ = "calendar_sync_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    range_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    range_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

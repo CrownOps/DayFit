@@ -11,6 +11,7 @@ from app.api import (
     books,
     bottlenecks,
     calendar,
+    dashboard,
     gmail,
     habits,
     integrations,
@@ -23,6 +24,8 @@ from app.api import (
     users,
 )
 from app.core.config import settings
+from app.services.gcs_pulse_client import close_client as close_gcs_pulse_client
+from app.services.llm import close_client as close_llm_client
 from app.services.notification_scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,9 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     stop_scheduler()
+    # Release the pooled GCS Pulse / Claude connections held for the process lifetime.
+    close_gcs_pulse_client()
+    close_llm_client()
 
 
 app = FastAPI(title="DayFit API", lifespan=lifespan)
@@ -70,6 +76,7 @@ app.include_router(auth.router)
 app.include_router(books.router)
 app.include_router(bottlenecks.router)
 app.include_router(calendar.router)
+app.include_router(dashboard.router)
 app.include_router(gmail.router)
 app.include_router(habits.router)
 app.include_router(integrations.router)

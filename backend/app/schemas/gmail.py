@@ -25,6 +25,13 @@ class EmailListOut(BaseModel):
     next_page_token: str | None = None
 
 
+class EmailBriefOut(BaseModel):
+    """AI가 메일 한 통에서 뽑아낸 요약과 할 일."""
+
+    summary: str
+    action_items: list[str]
+
+
 class GmailStatusOut(BaseModel):
     """Which Google account the 이메일 page is currently reading from.
 
