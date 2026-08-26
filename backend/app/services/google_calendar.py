@@ -287,6 +287,22 @@ def get_calendar_service(user: User, db: Session):
 NO_REMINDERS = {"useDefault": False, "overrides": []}
 
 
+def _visible_calendars(service) -> list[tuple[str, bool]]:
+    """``(calendar id, read only)`` for every calendar the user keeps visible.
+
+    Respects the user's Google visibility choices: calendars they've hidden
+    (holidays, week numbers, …) are skipped. Primary is always included.
+    """
+    calendars = service.calendarList().list().execute().get("items", [])
+    visible: list[tuple[str, bool]] = []
+    for cal in calendars:
+        if not cal.get("primary") and not cal.get("selected"):
+            continue
+        access = cal.get("accessRole", "reader")
+        visible.append((cal["id"], access in ("reader", "freeBusyReader")))
+    return visible
+
+
 def list_events(user: User, db: Session, time_min: datetime, time_max: datetime) -> list[dict]:
     """Events across every calendar the user has enabled — not just their own
     primary calendar, but also invited/shared calendars they keep visible.
@@ -294,41 +310,45 @@ def list_events(user: User, db: Session, time_min: datetime, time_max: datetime)
     Each returned item is annotated with ``_calendarId`` (which calendar it came
     from) and ``_readOnly`` (True when the user only has read access), so the
     caller can route edits and mark invited events as non-editable.
+
+    The per-calendar ``events.list`` calls go out as a single batched request
+    rather than one sequential round trip each — a user with a handful of
+    shared calendars used to pay for every one of them on every page load.
     """
     service = get_calendar_service(user, db)
     time_min_iso = time_min.astimezone(timezone.utc).isoformat()
     time_max_iso = time_max.astimezone(timezone.utc).isoformat()
 
-    calendars = service.calendarList().list().execute().get("items", [])
+    calendars = _visible_calendars(service)
+    if not calendars:
+        return []
+    read_only_by_id = dict(calendars)
+
     items: list[dict] = []
-    for cal in calendars:
-        # Respect the user's Google visibility choices: skip calendars they've
-        # hidden (holidays, week numbers, etc.). Primary is always included.
-        if not cal.get("primary") and not cal.get("selected"):
-            continue
-        cal_id = cal["id"]
-        access = cal.get("accessRole", "reader")
-        read_only = access in ("reader", "freeBusyReader")
-        try:
-            result = (
-                service.events()
-                .list(
-                    calendarId=cal_id,
-                    timeMin=time_min_iso,
-                    timeMax=time_max_iso,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-        except Exception:
+
+    def collect(request_id, response, exception):
+        if exception is not None:
             # One inaccessible calendar shouldn't fail the whole request.
-            logger.warning("Failed to list events for calendar %s", cal_id, exc_info=True)
-            continue
-        for item in result.get("items", []):
-            item["_calendarId"] = cal_id
-            item["_readOnly"] = read_only
+            logger.warning("Failed to list events for calendar %s: %s", request_id, exception)
+            return
+        for item in response.get("items", []):
+            item["_calendarId"] = request_id
+            item["_readOnly"] = read_only_by_id[request_id]
             items.append(item)
+
+    batch = service.new_batch_http_request(callback=collect)
+    for cal_id, _ in calendars:
+        batch.add(
+            service.events().list(
+                calendarId=cal_id,
+                timeMin=time_min_iso,
+                timeMax=time_max_iso,
+                singleEvents=True,
+                orderBy="startTime",
+            ),
+            request_id=cal_id,
+        )
+    batch.execute()
     return items
 
 

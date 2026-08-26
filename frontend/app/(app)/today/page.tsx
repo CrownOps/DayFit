@@ -72,6 +72,7 @@ export default function TodayPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
 
@@ -97,7 +98,9 @@ export default function TodayPage() {
         ? `${weekStart.getMonth() + 1}월 ${weekStart.getDate()}일 주`
         : koreanDate(date);
 
-  const load = useCallback(async () => {
+  // `refresh` bypasses the server's short-lived calendar cache — used by the
+  // 새로고침 button so a change made in Google Calendar itself shows up at once.
+  const load = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -115,7 +118,7 @@ export default function TodayPage() {
         rangeEnd = endOfDay(date);
       }
       const [evs, hs, ls] = await Promise.all([
-        calendarApi.listEvents(rangeStart.toISOString(), rangeEnd.toISOString()),
+        calendarApi.listEvents(rangeStart.toISOString(), rangeEnd.toISOString(), refresh),
         habitsApi.list(),
         habitsApi.logs(day),
       ]);
@@ -132,6 +135,15 @@ export default function TodayPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function refreshFromGoogle() {
+    setRefreshing(true);
+    try {
+      await load(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function toggleHabit(habit: Habit) {
     const current = logs[habit.id]?.completed ?? false;
@@ -244,14 +256,24 @@ export default function TodayPage() {
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-text-primary">타임테이블</h2>
-              <Button
-                onClick={() => {
-                  setEditing(null);
-                  setModalOpen(true);
-                }}
-              >
-                + 일정
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={refreshFromGoogle}
+                  disabled={refreshing}
+                  title="Google 캘린더에서 다시 가져오기"
+                >
+                  {refreshing ? <Spinner className="h-4 w-4" /> : "새로고침"}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setEditing(null);
+                    setModalOpen(true);
+                  }}
+                >
+                  + 일정
+                </Button>
+              </div>
             </div>
             {viewMode === "month" ? (
               <MonthCalendar

@@ -42,8 +42,12 @@ export const calendarApi = {
   // (defaults to /settings on the server).
   authorizeUrl: (returnTo?: string) =>
     api<{ auth_url: string }>("/api/calendar/oauth/authorize", { query: { return_to: returnTo } }),
-  listEvents: (start: string, end: string) =>
-    api<CalendarEvent[]>("/api/calendar/events", { query: { start, end } }),
+  // The server serves a recently-synced window straight from its cache;
+  // `refresh` forces a fresh pull from Google.
+  listEvents: (start: string, end: string, refresh = false) =>
+    api<CalendarEvent[]>("/api/calendar/events", {
+      query: { start, end, refresh: refresh || undefined },
+    }),
   create: (body: EventInput) => api<CalendarEvent>("/api/calendar/events", { method: "POST", body }),
   update: (id: number, body: Partial<EventInput>) =>
     api<CalendarEvent>(`/api/calendar/events/${id}`, { method: "PATCH", body }),

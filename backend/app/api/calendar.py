@@ -3,12 +3,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.calendar import CalendarEventCache
+from app.models.calendar import CalendarEventCache, CalendarSyncState
 from app.models.user import User
 from app.schemas.calendar import EventCreate, EventOut, EventUpdate, GoogleAuthUrlOut
 from app.services import google_calendar as gcal
@@ -101,6 +102,53 @@ def oauth_callback(
     return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=connected")
 
 
+# How long a synced window is trusted before Google is queried again. The
+# frontend refetches on every date change and 월간/주간/일간 switch, so without
+# this every one of those paid for a full Google round trip. Edits made inside
+# DayFit update the cache directly, so only changes made elsewhere wait for it —
+# and "새로고침" (refresh=true) forces a pull.
+CALENDAR_SYNC_TTL = timedelta(seconds=60)
+
+# Sync bookkeeping older than this is dropped when a user next syncs.
+_SYNC_STATE_RETENTION = timedelta(days=1)
+
+
+def _cache_covers(db: Session, user: User, start: datetime, end: datetime) -> bool:
+    """True when a recent sync already covered all of [start, end].
+
+    A month sync covers the weeks and days inside it, so switching 월간 → 일간
+    within the same month is served entirely from the cache.
+    """
+    cutoff = datetime.now(timezone.utc) - CALENDAR_SYNC_TTL
+    return (
+        db.query(CalendarSyncState.id)
+        .filter(
+            CalendarSyncState.user_id == user.id,
+            CalendarSyncState.range_start <= start,
+            CalendarSyncState.range_end >= end,
+            CalendarSyncState.synced_at > cutoff,
+        )
+        .first()
+        is not None
+    )
+
+
+def _mark_synced(db: Session, user: User, start: datetime, end: datetime) -> None:
+    now = datetime.now(timezone.utc)
+    # Windows contained in the one just synced are redundant now; so is anything
+    # long expired. Both would otherwise accumulate a row per browsed month.
+    db.query(CalendarSyncState).filter(
+        CalendarSyncState.user_id == user.id,
+        or_(
+            and_(CalendarSyncState.range_start >= start, CalendarSyncState.range_end <= end),
+            CalendarSyncState.synced_at < now - _SYNC_STATE_RETENTION,
+        ),
+    ).delete(synchronize_session=False)
+    db.add(
+        CalendarSyncState(user_id=user.id, range_start=start, range_end=end, synced_at=now)
+    )
+
+
 def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:
     start = item.get("start", {})
     end = item.get("end", {})
@@ -124,6 +172,7 @@ def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:
 def get_events(
     start: datetime = Query(default_factory=lambda: datetime.now(timezone.utc)),
     end: datetime | None = None,
+    refresh: bool = Query(False, description="캐시를 무시하고 Google에서 다시 가져온다"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -134,7 +183,10 @@ def get_events(
     # that began before the window still appear — matching how the Google API
     # interprets timeMin/timeMax. The delete uses the same window as the fetch,
     # otherwise re-synced spanning events would accumulate duplicates.
-    if user.google_calendar_connected:
+    should_sync = user.google_calendar_connected and (
+        refresh or not _cache_covers(db, user, start, end)
+    )
+    if should_sync:
         items = gcal.list_events(user, db, start, end)
         db.query(CalendarEventCache).filter(
             CalendarEventCache.user_id == user.id,
@@ -144,6 +196,7 @@ def get_events(
         ).delete()
         rows = [_to_cache_row(user.id, item) for item in items]
         db.add_all(rows)
+        _mark_synced(db, user, start, end)
         db.commit()
 
     cached = (
