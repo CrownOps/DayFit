@@ -29,9 +29,16 @@ def _callback_url(request: Request) -> str:
 
 
 @router.get("/oauth/authorize", response_model=GoogleAuthUrlOut)
-def authorize(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def authorize(
+    request: Request,
+    return_to: str | None = Query(None, description="연결 후 돌아갈 프론트엔드 경로"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
-        return GoogleAuthUrlOut(auth_url=gcal.get_authorization_url(db, user, _callback_url(request)))
+        return GoogleAuthUrlOut(
+            auth_url=gcal.get_authorization_url(db, user, _callback_url(request), return_to=return_to)
+        )
     except gcal.GoogleNotConfiguredError:
         raise HTTPException(
             status_code=400,
@@ -39,12 +46,13 @@ def authorize(request: Request, user: User = Depends(get_current_user), db: Sess
         )
 
 
-def _purpose_from_state(state: str | None) -> str:
-    """Best-effort purpose ("calendar"/"gmail") for redirecting back to
-    /settings, even on paths that never reach `exchange_code_for_tokens`."""
-    if state and ":" in state:
-        return state.split(":", 1)[1]
-    return "calendar"
+def _route_from_state(state: str | None) -> tuple[str, str]:
+    """Best-effort ``(purpose, return path)`` for redirecting the user back,
+    even on paths that never reach `exchange_code_for_tokens`."""
+    if not state:
+        return "calendar", gcal.sanitize_return_to(None)
+    _, purpose, return_to = gcal.parse_state(state)
+    return purpose, return_to
 
 
 @router.get("/oauth/callback")
@@ -55,22 +63,22 @@ def oauth_callback(
     error: str | None = None,
     db: Session = Depends(get_db),
 ):
-    purpose = _purpose_from_state(state)
+    purpose, return_to = _route_from_state(state)
     if error or not code or not state:
         # User denied consent, or Google redirected without an auth code.
         logger.info("Google OAuth callback without code (error=%s, state=%s)", error, state)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
+        return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=error")
 
     try:
         user_id, purpose, creds = gcal.exchange_code_for_tokens(db, code, state, _callback_url(request))
     except gcal.GoogleNotConfiguredError:
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=not_configured")
+        return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=not_configured")
     except Exception:
         # Any failure exchanging the code (invalid/expired code, redirect_uri
         # mismatch, network error to Google's token endpoint, etc.) should send
         # the user back to settings with an error rather than a bare 500.
         logger.exception("Google OAuth token exchange failed for state=%s", state)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
+        return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=error")
 
     user = db.get(User, user_id)
     if user is None:
@@ -80,7 +88,7 @@ def oauth_callback(
         gcal.save_credentials(db, user, creds, purpose)
     except Exception:
         logger.exception("Failed to save Google credentials for user_id=%s", user_id)
-        return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=error")
+        return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=error")
 
     if purpose == "calendar":
         try:
@@ -90,7 +98,7 @@ def oauth_callback(
             # connection succeeded even if this step fails.
             logger.exception("Failed to disable existing reminders for user_id=%s", user_id)
 
-    return RedirectResponse(url=f"{settings.frontend_url}/settings?{purpose}=connected")
+    return RedirectResponse(url=f"{settings.frontend_url}{return_to}?{purpose}=connected")
 
 
 def _to_cache_row(user_id: int, item: dict) -> CalendarEventCache:

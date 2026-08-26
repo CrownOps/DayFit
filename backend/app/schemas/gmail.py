@@ -23,3 +23,15 @@ class EmailDetail(EmailSummary):
 class EmailListOut(BaseModel):
     messages: list[EmailSummary]
     next_page_token: str | None = None
+
+
+class GmailStatusOut(BaseModel):
+    """Which Google account the 이메일 page is currently reading from.
+
+    ``configured`` is False when the user hasn't registered their own Google
+    OAuth client yet, in which case connecting can't even be attempted.
+    """
+
+    connected: bool
+    email: str | None = None
+    configured: bool

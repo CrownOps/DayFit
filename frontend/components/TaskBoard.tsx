@@ -6,7 +6,7 @@ import type { Task, TaskScope } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
-import { STATUS_META, StatusToggle, nextStatus } from "@/components/TaskStatus";
+import { STATUS_META, STATUS_SORT_RANK, StatusToggle, nextStatus } from "@/components/TaskStatus";
 import { TaskLog } from "@/components/TaskLog";
 
 type Lists = Record<TaskScope, Task[]>;
@@ -23,6 +23,12 @@ const COLUMNS: {
 interface DropTarget {
   scope: TaskScope;
   beforeId: number | null; // null = drop at the end of the column
+}
+
+/** 진행 중 → 진행 전 → 진행 완료 순. `sort` is stable, so tasks sharing a status
+ * keep the manual order the user dragged them into. */
+function sortByStatus(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => STATUS_SORT_RANK[a.status] - STATUS_SORT_RANK[b.status]);
 }
 
 /**
@@ -43,6 +49,7 @@ export function TaskBoard() {
     listsRef.current = lists;
   }, [lists]);
 
+  const [sorting, setSorting] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const draggingFrom = useRef<TaskScope | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
@@ -114,6 +121,30 @@ export function TaskBoard() {
     }
   }
 
+  /** Reorder both columns by status (진행 중 → 진행 전 → 진행 완료) and persist
+   * the new order, so it survives a reload like a manual drag would. */
+  async function autoSort() {
+    if (sorting) return;
+    const prev = listsRef.current;
+    const next: Lists = { today: sortByStatus(prev.today), week: sortByStatus(prev.week) };
+    setLists(next);
+    listsRef.current = next;
+
+    setSorting(true);
+    setError(null);
+    try {
+      for (const col of COLUMNS) {
+        const ids = next[col.scope].map((t) => t.id);
+        if (ids.length > 0) await tasksApi.reorder(col.scope, ids);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "정렬에 실패했습니다");
+      load();
+    } finally {
+      setSorting(false);
+    }
+  }
+
   // Move `id` from `from` into `to`, inserting before `beforeId` (or at the end
   // when null). Persists the target column's new order.
   const moveTask = useCallback(
@@ -160,6 +191,18 @@ export function TaskBoard() {
   return (
     <div className="space-y-3">
       <ErrorAlert>{error}</ErrorAlert>
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={autoSort}
+          disabled={sorting || loading || lists.today.length + lists.week.length === 0}
+          title="진행 중 → 진행 전 → 진행 완료 순으로 정렬합니다"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text-secondary"
+        >
+          {sorting ? <Spinner className="h-4 w-4" /> : <span aria-hidden>↕</span>}
+          자동 정렬
+        </button>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         {COLUMNS.map((col) => (
           <Column

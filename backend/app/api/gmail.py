@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.calendar import GoogleAuthUrlOut
-from app.schemas.gmail import EmailDetail, EmailListOut, Folder
+from app.schemas.gmail import EmailDetail, EmailListOut, Folder, GmailStatusOut
 from app.services import gmail_service
 from app.services import google_calendar as gcal
 from app.services.gmail_service import GmailError
@@ -23,16 +23,39 @@ def _callback_url(request: Request) -> str:
 
 
 @router.get("/oauth/authorize", response_model=GoogleAuthUrlOut)
-def authorize(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def authorize(
+    request: Request,
+    return_to: str | None = Query(None, description="연결 후 돌아갈 프론트엔드 경로"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
         return GoogleAuthUrlOut(
-            auth_url=gcal.get_authorization_url(db, user, _callback_url(request), purpose="gmail")
+            auth_url=gcal.get_authorization_url(
+                db, user, _callback_url(request), purpose="gmail", return_to=return_to
+            )
         )
     except GoogleNotConfiguredError:
         raise HTTPException(
             status_code=400,
             detail="Google 연동이 설정되지 않았습니다. 설정에서 본인 Google API(Client ID/Secret)를 먼저 입력하세요.",
         )
+
+
+@router.get("/status", response_model=GmailStatusOut)
+def status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Connection state for the 이메일 page: which Google account is connected."""
+    return GmailStatusOut(
+        connected=user.gmail_connected,
+        email=gmail_service.get_connected_address(user, db),
+        configured=gcal.resolve_google_config(db, user) is not None,
+    )
+
+
+@router.delete("/connection", status_code=204)
+def disconnect(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Disconnect the Gmail account (Calendar keeps its own, separate token)."""
+    gcal.clear_credentials(db, user, purpose="gmail")
 
 
 @router.get("/messages", response_model=EmailListOut)

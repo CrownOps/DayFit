@@ -1,6 +1,9 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# "admin" = 관리자만 수정, "member" = 팀원 누구나 수정.
+EditPolicy = Literal["admin", "member"]
 
 
 class TeamProfileOut(BaseModel):
@@ -14,6 +17,21 @@ class TeamProfileOut(BaseModel):
 class TeamProfileUpdate(BaseModel):
     vision: str = ""
     mission: str = ""
+
+
+class TeamPermissionsOut(BaseModel):
+    """Edit policies for the team space, plus what the caller may actually do."""
+
+    rules_edit_policy: EditPolicy
+    profile_edit_policy: EditPolicy
+    can_edit_rules: bool
+    can_edit_profile: bool
+    is_admin: bool
+
+
+class TeamPermissionsUpdate(BaseModel):
+    rules_edit_policy: Optional[EditPolicy] = None
+    profile_edit_policy: Optional[EditPolicy] = None
 
 
 class TeamRuleOut(BaseModel):

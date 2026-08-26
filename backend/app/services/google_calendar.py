@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 # Google may return more scopes than we requested (e.g. because
 # ``include_granted_scopes`` pulls in scopes the user previously granted to this
@@ -129,32 +130,64 @@ def build_flow(config: GoogleOAuthConfig, scopes: list[str], state: str | None =
     )
 
 
+# Frontend paths the OAuth callback is allowed to send the user back to. A
+# stricter check than "starts with /" so `state` can never turn into an open
+# redirect (it round-trips through Google and back).
+_RETURN_TO_RE = re.compile(r"^/[A-Za-z0-9/_-]*$")
+
+
+def sanitize_return_to(return_to: str | None, default: str = "/settings") -> str:
+    """Relative frontend path to return to after the OAuth round trip."""
+    if return_to and _RETURN_TO_RE.match(return_to) and not return_to.startswith("//"):
+        return return_to
+    return default
+
+
 def get_authorization_url(
-    db: Session, user: User, request_redirect_uri: str | None = None, purpose: str = "calendar"
+    db: Session,
+    user: User,
+    request_redirect_uri: str | None = None,
+    purpose: str = "calendar",
+    return_to: str | None = None,
 ) -> str:
     config = resolve_google_config(db, user, request_redirect_uri)
     if config is None or not config.redirect_uri:
         raise GoogleNotConfiguredError()
     scopes = PURPOSE_SCOPES[purpose]
-    # Encode the purpose into `state` so the shared callback knows which
-    # token columns to save into — and so each purpose can be connected to a
-    # different Google account (Google's account chooser is per auth request).
-    flow = build_flow(config, scopes, state=f"{user.id}:{purpose}")
+    # Encode the purpose (and the page that started the flow) into `state` so
+    # the shared callback knows which token columns to save into and where to
+    # send the user back — and so each purpose can be connected to a different
+    # Google account (Google's account chooser is per auth request).
+    state = f"{user.id}:{purpose}:{sanitize_return_to(return_to)}"
+    flow = build_flow(config, scopes, state=state)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        # "select_account" always shows Google's account chooser, so a user who
+        # is already signed in can point this purpose at a different account
+        # (e.g. a personal Gmail alongside a work Calendar) instead of being
+        # silently reconnected to the one they last used.
+        prompt="consent select_account",
     )
     return auth_url
 
 
-def _parse_state(state: str) -> tuple[int, str]:
-    user_id_str, sep, purpose = state.partition(":")
-    if not sep:
-        # Old-style state from a link that was already in flight when this
-        # shipped (no purpose suffix) — treat as calendar, the original behavior.
-        return int(state), "calendar"
-    return int(user_id_str), purpose
+def parse_state(state: str) -> tuple[int | None, str, str]:
+    """``(user id, purpose, return path)`` from an OAuth ``state``.
+
+    Tolerates the older two-part ("<id>:<purpose>") and one-part ("<id>") forms
+    from links that were already in flight when this shipped. The user id is
+    None when the state isn't parseable at all, so error redirects can still
+    pick a sensible destination.
+    """
+    parts = state.split(":", 2)
+    try:
+        user_id: int | None = int(parts[0])
+    except (ValueError, IndexError):
+        user_id = None
+    purpose = parts[1] if len(parts) > 1 and parts[1] in PURPOSE_SCOPES else "calendar"
+    return_to = sanitize_return_to(parts[2] if len(parts) > 2 else None)
+    return user_id, purpose, return_to
 
 
 def exchange_code_for_tokens(
@@ -162,8 +195,8 @@ def exchange_code_for_tokens(
 ) -> tuple[int, str, Credentials]:
     # ``state`` is "<user id>:<purpose>" set when the auth URL was built;
     # resolve that user's own client to exchange the code (tokens are bound to it).
-    user_id, purpose = _parse_state(state)
-    user = db.get(User, user_id)
+    user_id, purpose, _ = parse_state(state)
+    user = db.get(User, user_id) if user_id is not None else None
     if user is None:
         raise GoogleNotConfiguredError()
     config = resolve_google_config(db, user, request_redirect_uri)
@@ -186,6 +219,20 @@ def save_credentials(db: Session, user: User, creds: Credentials, purpose: str =
     if creds.refresh_token:
         setattr(user, refresh_field, encrypt_secret(creds.refresh_token))
     setattr(user, connected_field, True)
+    db.add(user)
+    db.commit()
+
+
+def clear_credentials(db: Session, user: User, purpose: str = "calendar") -> None:
+    """Disconnect ``purpose``: drop its stored tokens and mark it unconnected.
+
+    Used to switch the connected Google account — the next authorize round trip
+    starts from a clean slate instead of refreshing the old account's token.
+    """
+    token_field, refresh_field, connected_field = _TOKEN_FIELDS[purpose]
+    setattr(user, token_field, None)
+    setattr(user, refresh_field, None)
+    setattr(user, connected_field, False)
     db.add(user)
     db.commit()
 

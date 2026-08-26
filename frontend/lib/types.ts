@@ -145,6 +145,14 @@ export interface EmailDetail extends EmailSummary {
   body_text: string;
 }
 
+/** Which Google account the 이메일 page currently reads from. */
+export interface GmailStatus {
+  connected: boolean;
+  email: string | null;
+  // False until the user registers their own Google OAuth client in 설정.
+  configured: boolean;
+}
+
 export interface EmailListOut {
   messages: EmailSummary[];
   next_page_token: string | null;
@@ -226,6 +234,18 @@ export interface TeamProfile {
   team_id: string;
   vision: string;
   mission: string;
+}
+
+/** "admin" = 관리자만 수정, "member" = 팀원 전체 수정. */
+export type TeamEditPolicy = "admin" | "member";
+
+export interface TeamPermissions {
+  rules_edit_policy: TeamEditPolicy;
+  profile_edit_policy: TeamEditPolicy;
+  // What the current user may do under those policies (admins always may).
+  can_edit_rules: boolean;
+  can_edit_profile: boolean;
+  is_admin: boolean;
 }
 
 export interface TeamRule {

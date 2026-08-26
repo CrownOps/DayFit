@@ -12,6 +12,7 @@ import type {
   EmailFolder,
   EmailListOut,
   EventInput,
+  GmailStatus,
   MyGoogleIntegration,
   Habit,
   HabitLog,
@@ -28,14 +29,19 @@ import type {
   TaskScope,
   TaskStatus,
   TaskView,
+  TeamEditPolicy,
   TeamHealthEntry,
+  TeamPermissions,
   TeamProfile,
   TeamRule,
 } from "./types";
 
 // ---- Calendar ----
 export const calendarApi = {
-  authorizeUrl: () => api<{ auth_url: string }>("/api/calendar/oauth/authorize"),
+  // `returnTo` is the frontend path the OAuth callback sends the user back to
+  // (defaults to /settings on the server).
+  authorizeUrl: (returnTo?: string) =>
+    api<{ auth_url: string }>("/api/calendar/oauth/authorize", { query: { return_to: returnTo } }),
   listEvents: (start: string, end: string) =>
     api<CalendarEvent[]>("/api/calendar/events", { query: { start, end } }),
   create: (body: EventInput) => api<CalendarEvent>("/api/calendar/events", { method: "POST", body }),
@@ -46,10 +52,15 @@ export const calendarApi = {
 
 // ---- Gmail (read-only) ----
 export const gmailApi = {
-  authorizeUrl: () => api<{ auth_url: string }>("/api/gmail/oauth/authorize"),
+  authorizeUrl: (returnTo?: string) =>
+    api<{ auth_url: string }>("/api/gmail/oauth/authorize", { query: { return_to: returnTo } }),
   list: (folder: EmailFolder, pageToken?: string | null) =>
     api<EmailListOut>("/api/gmail/messages", { query: { folder, page_token: pageToken } }),
   get: (id: string) => api<EmailDetail>(`/api/gmail/messages/${id}`),
+  // Which Google account is connected for email (independent of Calendar).
+  status: () => api<GmailStatus>("/api/gmail/status"),
+  // Drop the stored Gmail tokens so a different account can be connected.
+  disconnect: () => api<void>("/api/gmail/connection", { method: "DELETE" }),
 };
 
 // ---- Habits ----
@@ -167,6 +178,13 @@ export const bottlenecksApi = {
 // ---- Team space (vision / mission / rules) ----
 export const teamSpaceApi = {
   profile: () => api<TeamProfile>("/api/team/profile"),
+  // Who may edit 팀룰 / 비전·미션. Reading is open to the team; only an admin
+  // can change the policies.
+  permissions: () => api<TeamPermissions>("/api/team/permissions"),
+  updatePermissions: (body: {
+    rules_edit_policy?: TeamEditPolicy;
+    profile_edit_policy?: TeamEditPolicy;
+  }) => api<TeamPermissions>("/api/team/permissions", { method: "PUT", body }),
   updateProfile: (body: { vision: string; mission: string }) =>
     api<TeamProfile>("/api/team/profile", { method: "PUT", body }),
   rules: () => api<TeamRule[]>("/api/team/rules"),

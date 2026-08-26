@@ -164,7 +164,13 @@ export default function SnippetsPage() {
     setError(null);
     try {
       const res = await snippetsApi.organize(draft);
-      setSuggestion(res.organized_content);
+      const organized = res.organized_content?.trim();
+      // An empty answer would otherwise render as a blank "AI 제안" panel.
+      if (!organized) {
+        setError("AI가 정리한 내용을 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      setSuggestion(organized);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI 제안에 실패했습니다");
     } finally {

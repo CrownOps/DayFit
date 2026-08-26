@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { teamSpaceApi } from "@/lib/resources";
-import type { TeamProfile, TeamRule } from "@/lib/types";
+import type { TeamPermissions, TeamProfile, TeamRule } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button, Card, ErrorAlert, Input, Label, Spinner, Textarea } from "@/components/ui";
@@ -10,10 +10,12 @@ import { Modal } from "@/components/Modal";
 
 export default function TeamSpacePage() {
   const { user } = useAuth();
-  const isAdmin = !!user?.is_admin;
 
   const [profile, setProfile] = useState<TeamProfile | null>(null);
   const [rules, setRules] = useState<TeamRule[]>([]);
+  // Editing is gated by the team's policy (설정 → 팀 스페이스 권한), not by the
+  // admin flag alone — an admin can open either section to the whole team.
+  const [perms, setPerms] = useState<TeamPermissions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profileModal, setProfileModal] = useState(false);
@@ -22,9 +24,14 @@ export default function TeamSpacePage() {
     setLoading(true);
     setError(null);
     try {
-      const [p, r] = await Promise.all([teamSpaceApi.profile(), teamSpaceApi.rules()]);
+      const [p, r, perm] = await Promise.all([
+        teamSpaceApi.profile(),
+        teamSpaceApi.rules(),
+        teamSpaceApi.permissions(),
+      ]);
       setProfile(p);
       setRules(r);
+      setPerms(perm);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다");
     } finally {
@@ -35,6 +42,11 @@ export default function TeamSpacePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Fall back to the admin flag if the permissions call failed, matching the
+  // server's default policy (관리자만).
+  const canEditProfile = perms?.can_edit_profile ?? !!user?.is_admin;
+  const canEditRules = perms?.can_edit_rules ?? !!user?.is_admin;
 
   if (loading) {
     return (
@@ -51,7 +63,7 @@ export default function TeamSpacePage() {
           <h1 className="text-xl font-semibold text-text-primary">팀 스페이스</h1>
           <p className="text-sm text-text-secondary">우리 팀의 비전 · 미션 · 그라운드 룰</p>
         </div>
-        {isAdmin && (
+        {canEditProfile && (
           <Button variant="ghost" onClick={() => setProfileModal(true)}>
             비전/미션 수정
           </Button>
@@ -68,7 +80,7 @@ export default function TeamSpacePage() {
             <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{profile.vision}</p>
           ) : (
             <p className="text-sm text-text-tertiary">
-              {isAdmin ? "아직 비전이 없습니다. 수정에서 등록하세요." : "아직 등록된 비전이 없습니다."}
+              {canEditProfile ? "아직 비전이 없습니다. 수정에서 등록하세요." : "아직 등록된 비전이 없습니다."}
             </p>
           )}
         </Card>
@@ -78,7 +90,7 @@ export default function TeamSpacePage() {
             <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{profile.mission}</p>
           ) : (
             <p className="text-sm text-text-tertiary">
-              {isAdmin ? "아직 미션이 없습니다. 수정에서 등록하세요." : "아직 등록된 미션이 없습니다."}
+              {canEditProfile ? "아직 미션이 없습니다. 수정에서 등록하세요." : "아직 등록된 미션이 없습니다."}
             </p>
           )}
         </Card>
@@ -87,12 +99,12 @@ export default function TeamSpacePage() {
       {/* Team rules */}
       <RulesSection
         rules={rules}
-        isAdmin={isAdmin}
+        canEdit={canEditRules}
         onChanged={load}
         onError={(m) => setError(m)}
       />
 
-      {isAdmin && (
+      {canEditProfile && (
         <ProfileModal
           open={profileModal}
           onClose={() => setProfileModal(false)}
@@ -109,12 +121,12 @@ export default function TeamSpacePage() {
 
 function RulesSection({
   rules,
-  isAdmin,
+  canEdit,
   onChanged,
   onError,
 }: {
   rules: TeamRule[];
-  isAdmin: boolean;
+  canEdit: boolean;
   onChanged: () => void;
   onError: (msg: string) => void;
 }) {
@@ -168,7 +180,7 @@ function RulesSection({
       {rules.length === 0 ? (
         <Card>
           <p className="text-sm text-text-tertiary">
-            {isAdmin ? "아직 팀룰이 없습니다. 아래에서 추가하세요." : "아직 등록된 팀룰이 없습니다."}
+            {canEdit ? "아직 팀룰이 없습니다. 아래에서 추가하세요." : "아직 등록된 팀룰이 없습니다."}
           </p>
         </Card>
       ) : (
@@ -195,7 +207,7 @@ function RulesSection({
                   <p className="flex-1 min-w-0 text-sm text-text-primary whitespace-pre-wrap break-words">
                     {rule.content}
                   </p>
-                  {isAdmin && (
+                  {canEdit && (
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         onClick={() => {
@@ -221,7 +233,7 @@ function RulesSection({
         </Card>
       )}
 
-      {isAdmin && (
+      {canEdit && (
         <form onSubmit={add} className="flex items-center gap-2">
           <Input
             value={draft}
