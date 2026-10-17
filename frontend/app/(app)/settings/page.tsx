@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { calendarApi, gmailApi, integrationsApi, pushApi, teamSpaceApi, usersApi } from "@/lib/resources";
-import type { MyGoogleIntegration, PushSubscriptionRow, TeamEditPolicy, TeamPermissions } from "@/lib/types";
+import { apiTokensApi, calendarApi, gmailApi, integrationsApi, pushApi, teamSpaceApi, usersApi } from "@/lib/resources";
+import type { ApiTokenCreated, ApiTokenRow, MyGoogleIntegration, PushSubscriptionRow, TeamEditPolicy, TeamPermissions } from "@/lib/types";
 import Link from "next/link";
-import { ApiError } from "@/lib/api";
+import { API_BASE, ApiError } from "@/lib/api";
 import { Button, Card, ErrorAlert, Input, Label, Spinner } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { clsx } from "@/lib/clsx";
@@ -41,6 +41,7 @@ export default function SettingsPage() {
       <GoogleCalendarSection connected={user?.google_calendar_connected ?? false} />
       <GmailSection connected={user?.gmail_connected ?? false} />
       <GcsPulseSection />
+      <ClaudeSection />
       {user?.is_admin && <TeamPermissionsSection />}
       {user?.is_admin && (
         <Card className="space-y-2">
@@ -147,6 +148,120 @@ function PushSection() {
           <ErrorAlert>{error}</ErrorAlert>
         </>
       )}
+    </Card>
+  );
+}
+
+/** 개인 API 토큰 발급 — Claude Code/데스크톱이 MCP로 할 일을 읽고 추가할 때 쓴다.
+ *
+ * 토큰 원문은 발급 직후 한 번만 보여 준다(서버에는 해시만 남는다). */
+function ClaudeSection() {
+  const [tokens, setTokens] = useState<ApiTokenRow[] | null>(null);
+  const [name, setName] = useState("Claude");
+  const [created, setCreated] = useState<ApiTokenCreated | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const mcpUrl = `${API_BASE}/api/mcp`;
+
+  useEffect(() => {
+    apiTokensApi
+      .list()
+      .then(setTokens)
+      .catch((err) => setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다"));
+  }, []);
+
+  async function issue() {
+    setBusy(true);
+    setError(null);
+    setCopied(false);
+    try {
+      const token = await apiTokensApi.create(name.trim());
+      setCreated(token);
+      setTokens((prev) => [token, ...(prev ?? [])]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "발급에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: number) {
+    if (!confirm("이 토큰을 폐기할까요? 이 토큰을 쓰는 Claude 연결은 바로 끊깁니다.")) return;
+    setError(null);
+    try {
+      await apiTokensApi.revoke(id);
+      setTokens((prev) => (prev ?? []).filter((t) => t.id !== id));
+      if (created?.id === id) setCreated(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "폐기에 실패했습니다");
+    }
+  }
+
+  const command = created
+    ? `claude mcp add --transport http --scope user dayfit ${mcpUrl} --header "Authorization: Bearer ${created.token}"`
+    : "";
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+    } catch {
+      /* clipboard blocked — the text is selectable */
+    }
+  }
+
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-primary">Claude 연결 (MCP)</h2>
+      <p className="text-xs text-text-tertiary">
+        Claude Code나 Claude 데스크톱 앱에서 대화하면서 할 일을 추가·조회·완료할 수 있습니다. 토큰을 발급한 뒤
+        아래 명령을 터미널에서 한 번 실행하세요.
+      </p>
+
+      {created && (
+        <div className="space-y-2 rounded-lg border border-accent/40 bg-accent/5 p-3">
+          <p className="text-xs text-warning">이 토큰은 지금 한 번만 보입니다. 바로 복사해 두세요.</p>
+          <pre className="whitespace-pre-wrap break-all rounded bg-surface p-2 text-xs text-text-primary select-all">
+            {command}
+          </pre>
+          <div className="flex gap-2">
+            <Button onClick={copy}>{copied ? "복사됨 ✓" : "명령 복사"}</Button>
+            <Button variant="ghost" onClick={() => setCreated(null)}>
+              닫기
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="토큰 이름 (예: 노트북 Claude)" />
+        <Button onClick={issue} disabled={busy || !name.trim()}>
+          {busy ? <Spinner className="h-4 w-4 border-white/40 border-t-white" /> : "토큰 발급"}
+        </Button>
+      </div>
+
+      {tokens === null ? (
+        <Spinner className="h-4 w-4" />
+      ) : tokens.length > 0 ? (
+        <ul className="divide-y divide-border text-sm">
+          {tokens.map((t) => (
+            <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+              <div className="min-w-0">
+                <div className="truncate text-text-primary">{t.name}</div>
+                <div className="text-xs text-text-tertiary">
+                  {t.prefix}… · {t.last_used_at ? `최근 사용 ${new Date(t.last_used_at).toLocaleDateString()}` : "사용 기록 없음"}
+                </div>
+              </div>
+              <Button variant="ghost" onClick={() => revoke(t.id)}>
+                폐기
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <ErrorAlert>{error}</ErrorAlert>
     </Card>
   );
 }

@@ -8,12 +8,18 @@ from app.core.database import get_db
 from app.core.deps import get_current_admin, get_current_user
 from app.core.security import (
     create_access_token,
+    generate_api_token,
     generate_invite_code,
+    hash_api_token,
     hash_password,
     verify_password,
 )
+from app.models.api_token import ApiToken
 from app.models.user import InviteCode, User
 from app.schemas.auth import (
+    ApiTokenCreate,
+    ApiTokenCreated,
+    ApiTokenOut,
     InviteCodeCreate,
     InviteCodeOut,
     LoginRequest,
@@ -115,3 +121,42 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def read_me(user: User = Depends(get_current_user)):
     return user
+
+
+# ---- Personal API tokens (for Claude via MCP and other scripts) -----------
+
+
+@router.get("/api-tokens", response_model=list[ApiTokenOut])
+def list_api_tokens(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return (
+        db.query(ApiToken)
+        .filter(ApiToken.user_id == user.id)
+        .order_by(ApiToken.created_at.desc(), ApiToken.id.desc())
+        .all()
+    )
+
+
+@router.post("/api-tokens", response_model=ApiTokenCreated)
+def create_api_token(
+    payload: ApiTokenCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    token = generate_api_token()
+    api_token = ApiToken(
+        user_id=user.id,
+        name=payload.name,
+        token_hash=hash_api_token(token),
+        prefix=token[:12],
+    )
+    db.add(api_token)
+    db.commit()
+    db.refresh(api_token)
+    return ApiTokenCreated(**ApiTokenOut.model_validate(api_token).model_dump(), token=token)
+
+
+@router.delete("/api-tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_api_token(token_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    api_token = db.get(ApiToken, token_id)
+    if api_token is None or api_token.user_id != user.id:
+        raise HTTPException(status_code=404, detail="API token not found")
+    db.delete(api_token)
+    db.commit()

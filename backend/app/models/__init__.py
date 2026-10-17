@@ -1,3 +1,4 @@
+from app.models.api_token import ApiToken
 from app.models.book import Book
 from app.models.bottleneck import Bottleneck, BottleneckAction
 from app.models.calendar import CalendarEventCache, CalendarSyncState
@@ -16,6 +17,7 @@ from app.models.user import InviteCode, User
 __all__ = [
     "User",
     "InviteCode",
+    "ApiToken",
     "Book",
     "Bottleneck",
     "BottleneckAction",

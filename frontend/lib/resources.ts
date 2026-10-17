@@ -1,6 +1,8 @@
 import { api } from "./api";
 import type {
   AiSource,
+  ApiTokenCreated,
+  ApiTokenRow,
   Book,
   BookInput,
   BookScope,
@@ -251,6 +253,13 @@ export const pushApi = {
     device_label?: string;
   }) => api<PushSubscriptionRow>("/api/push/subscriptions", { method: "POST", body }),
   remove: (id: number) => api<void>(`/api/push/subscriptions/${id}`, { method: "DELETE" }),
+};
+
+// ---- Personal API tokens (Claude MCP) ----
+export const apiTokensApi = {
+  list: () => api<ApiTokenRow[]>("/api/auth/api-tokens"),
+  create: (name: string) => api<ApiTokenCreated>("/api/auth/api-tokens", { method: "POST", body: { name } }),
+  revoke: (id: number) => api<void>(`/api/auth/api-tokens/${id}`, { method: "DELETE" }),
 };
 
 // ---- Users / GCS Pulse token ----
