@@ -230,6 +230,19 @@ export interface PushSubscriptionRow {
   device_label: string | null;
 }
 
+export interface ApiTokenRow {
+  id: number;
+  name: string;
+  prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+/** Returned once on creation — the only time the plaintext token is available. */
+export interface ApiTokenCreated extends ApiTokenRow {
+  token: string;
+}
+
 export type TaskScope = "today" | "week";
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskView = "own" | "team";

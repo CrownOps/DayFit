@@ -15,6 +15,7 @@ from app.api import (
     gmail,
     habits,
     integrations,
+    mcp,
     meeting_rooms,
     push,
     snippets,
@@ -80,6 +81,7 @@ app.include_router(dashboard.router)
 app.include_router(gmail.router)
 app.include_router(habits.router)
 app.include_router(integrations.router)
+app.include_router(mcp.router)
 app.include_router(meeting_rooms.router)
 app.include_router(push.router)
 app.include_router(snippets.router)

@@ -91,3 +91,4 @@ npm run dev                    # http://localhost:3000
 - [요구사항 정의서](docs/요구사항정의서_일정습관관리도구.md)
 - [UI 디자인 가이드](docs/UI_디자인가이드.md)
 - [Google Calendar 연동 가이드](docs/Google_Calendar_연동_가이드.md)
+- [Claude MCP 연결 가이드](docs/Claude_MCP_연결_가이드.md) — 대화로 할 일 추가

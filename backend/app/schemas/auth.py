@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class InviteCodeCreate(BaseModel):
@@ -48,3 +48,24 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class ApiTokenOut(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    last_used_at: datetime | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ApiTokenCreated(ApiTokenOut):
+    """Returned once, at creation: the only time the plaintext token is shown."""
+
+    token: str

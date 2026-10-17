@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -11,6 +12,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _fernet = Fernet(settings.encryption_key.encode())
 
 ALGORITHM = "HS256"
+# Personal API tokens carry this prefix so they can be told apart from login JWTs.
+API_TOKEN_PREFIX = "dft_"
 
 
 def hash_password(password: str) -> str:
@@ -45,3 +48,11 @@ def decrypt_secret(token: str) -> str:
 
 def generate_invite_code() -> str:
     return secrets.token_urlsafe(9)
+
+
+def generate_api_token() -> str:
+    return API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+
+
+def hash_api_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
