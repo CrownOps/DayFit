@@ -1,4 +1,8 @@
 {$DOMAIN} {
+	# 응답 압축. 서버가 미국(us-central1)에 있어 한국에서 받는 바이트가 그대로
+	# 지연이 되므로, JSON·JS·HTML을 압축해서 보낸다.
+	encode zstd gzip
+
 	handle /api/* {
 		reverse_proxy api:8000
 	}

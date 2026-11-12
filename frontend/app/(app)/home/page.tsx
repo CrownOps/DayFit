@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { dashboardApi } from "@/lib/resources";
 import type { Dashboard } from "@/lib/types";
 import { ApiError } from "@/lib/api";
+import { peek, remember } from "@/lib/cache";
 import { endOfDay, isoDate, koreanDate, startOfDay } from "@/lib/dates";
 import { ErrorAlert } from "@/components/ui";
 import { TaskBoard } from "@/components/TaskBoard";
@@ -25,19 +26,22 @@ export default function HomePage() {
 
   // 위젯 전부를 한 번에. 날짜/범위는 브라우저 로컬 기준으로 넘긴다 — 서버는
   // UTC라 스스로 "오늘"을 계산하면 KST 사용자와 하루가 어긋난다.
-  const [data, setData] = useState<Dashboard | null>(null);
+  // 지난번 받은 대시보드를 먼저 보여주고, 새 응답이 오면 갈아끼운다. 날짜가
+  // 키에 들어가므로 어제 데이터가 오늘로 보이지는 않는다.
+  const cacheKey = `dashboard:${isoDate(now)}`;
+  const [data, setData] = useState<Dashboard | null>(() => peek<Dashboard>(cacheKey));
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const today = new Date();
     try {
-      setData(
-        await dashboardApi.get(
-          isoDate(today),
-          startOfDay(today).toISOString(),
-          endOfDay(today).toISOString()
-        )
+      const fresh = await dashboardApi.get(
+        isoDate(today),
+        startOfDay(today).toISOString(),
+        endOfDay(today).toISOString()
       );
+      setData(fresh);
+      remember(`dashboard:${isoDate(today)}`, fresh);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "불러오기에 실패했습니다");
     }

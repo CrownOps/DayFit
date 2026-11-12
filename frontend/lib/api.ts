@@ -1,5 +1,10 @@
+import { clearCache } from "./cache";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 const TOKEN_KEY = "dayfit-token";
+// Last `/api/auth/me` result, so a returning user sees the app at once instead
+// of waiting a full round trip to the (US-hosted) server before anything loads.
+const USER_KEY = "dayfit-user";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -9,7 +14,27 @@ export function getToken(): string | null {
 export function setToken(token: string | null) {
   if (typeof window === "undefined") return;
   if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  else {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    clearCache();
+  }
+}
+
+export function getCachedUser<T>(): T | null {
+  if (typeof window === "undefined" || !getToken()) return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedUser(user: unknown) {
+  if (typeof window === "undefined") return;
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  else localStorage.removeItem(USER_KEY);
 }
 
 export class ApiError extends Error {

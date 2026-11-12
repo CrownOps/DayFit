@@ -1,4 +1,6 @@
+import copy
 import json
+import time
 from datetime import date
 from threading import Lock
 
@@ -51,6 +53,46 @@ def close_client() -> None:
         if _pool is not None:
             _pool.close()
             _pool = None
+
+
+# --- Short-lived read cache -------------------------------------------------
+# This server runs in us-central1 while GCS Pulse sits near Korea, so every
+# Pulse call is a trans-Pacific round trip — and the home dashboard makes
+# several per load (latest snippet, team health, room list, then each room's
+# reservations). Repeat views within a few seconds/minutes reuse the answer.
+# Writes made through DayFit drop the affected entries for that user, so their
+# own changes always show up immediately.
+_ROOMS_TTL = 600.0  # the room list itself practically never changes
+_READ_TTL = 30.0  # snippets and reservations: other people's edits lag ≤ 30s
+
+_cache: dict[tuple, tuple[float, object]] = {}
+_cache_lock = Lock()
+
+
+def _cached(key: tuple, ttl: float, fetch):
+    now = time.monotonic()
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None and hit[0] > now:
+            return copy.deepcopy(hit[1])
+    value = fetch()
+    with _cache_lock:
+        _cache[key] = (now + ttl, value)
+        if len(_cache) > 2000:  # bound memory on the 1 GB VM
+            for k in [k for k, (exp, _) in _cache.items() if exp <= now]:
+                del _cache[k]
+    return copy.deepcopy(value)
+
+
+def _invalidate(user: User, kind: str) -> None:
+    with _cache_lock:
+        for key in [k for k in _cache if k[0] == user.id and k[1] == kind]:
+            del _cache[key]
+
+
+def clear_cache() -> None:
+    with _cache_lock:
+        _cache.clear()
 
 
 def _auth_headers(user: User) -> dict[str, str]:
@@ -158,9 +200,13 @@ def list_daily_snippets(
     if to_date:
         params["to_date"] = to_date
 
-    resp = _request(user, "GET", "/daily-snippets", params=params)
-    _raise_for_status(resp)
-    return resp.json()
+    def fetch():
+        resp = _request(user, "GET", "/daily-snippets", params=params)
+        _raise_for_status(resp)
+        return resp.json()
+
+    key = (user.id, "snippets", tuple(sorted(params.items())))
+    return _cached(key, _READ_TTL, fetch)
 
 
 def get_daily_snippet(user: User, snippet_id: int) -> dict:
@@ -171,18 +217,21 @@ def get_daily_snippet(user: User, snippet_id: int) -> dict:
 
 def create_daily_snippet(user: User, content: str) -> dict:
     resp = _request(user, "POST", "/daily-snippets", json={"content": content})
+    _invalidate(user, "snippets")
     _raise_for_status(resp)
     return resp.json()
 
 
 def update_daily_snippet(user: User, snippet_id: int, content: str) -> dict:
     resp = _request(user, "PUT", f"/daily-snippets/{snippet_id}", json={"content": content})
+    _invalidate(user, "snippets")
     _raise_for_status(resp)
     return resp.json()
 
 
 def delete_daily_snippet(user: User, snippet_id: int) -> None:
     resp = _request(user, "DELETE", f"/daily-snippets/{snippet_id}")
+    _invalidate(user, "snippets")
     _raise_for_status(resp)
 
 
@@ -244,15 +293,21 @@ def get_token_usage(user: User) -> dict:
 
 
 def list_meeting_rooms(user: User) -> list[dict]:
-    resp = _request(user, "GET", "/meeting-rooms")
-    _raise_for_status(resp)
-    return resp.json()
+    def fetch():
+        resp = _request(user, "GET", "/meeting-rooms")
+        _raise_for_status(resp)
+        return resp.json()
+
+    return _cached((user.id, "rooms"), _ROOMS_TTL, fetch)
 
 
 def list_room_reservations(user: User, room_id: int, date: str) -> list[dict]:
-    resp = _request(user, "GET", f"/meeting-rooms/{room_id}/reservations", params={"date": date})
-    _raise_for_status(resp)
-    return resp.json()
+    def fetch():
+        resp = _request(user, "GET", f"/meeting-rooms/{room_id}/reservations", params={"date": date})
+        _raise_for_status(resp)
+        return resp.json()
+
+    return _cached((user.id, "reservations", room_id, date), _READ_TTL, fetch)
 
 
 def create_room_reservation(user: User, room_id: int, start_at: str, end_at: str, purpose: str | None) -> dict:
@@ -262,6 +317,7 @@ def create_room_reservation(user: User, room_id: int, start_at: str, end_at: str
         f"/meeting-rooms/{room_id}/reservations",
         json={"start_at": start_at, "end_at": end_at, "purpose": purpose},
     )
+    _invalidate(user, "reservations")
     _raise_for_status(resp)
     return resp.json()
 
@@ -273,4 +329,5 @@ def cancel_room_reservation(user: User, reservation_id: int) -> None:
     # request (including the loop in recurring_reservation_service.cancel_rule,
     # which left the recurring rule stuck "active").
     resp = _request(user, "DELETE", f"/meeting-rooms/reservations/{reservation_id}")
+    _invalidate(user, "reservations")
     _raise_for_status(resp)
