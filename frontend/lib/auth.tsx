@@ -7,7 +7,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { api, setToken } from "./api";
+import { ApiError, api, getCachedUser, setCachedUser, setToken } from "./api";
 import type { TokenResponse, User } from "./types";
 
 interface AuthContextValue {
@@ -34,13 +34,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await api<User>("/api/auth/me");
       setUser(me);
-    } catch {
-      setUser(null);
-      setToken(null);
+      setCachedUser(me);
+    } catch (err) {
+      // Only an auth rejection signs the user out. A network blip (slow or
+      // dropped connection) keeps the cached user so the app stays usable.
+      if (err instanceof ApiError && err.status === 401) {
+        setUser(null);
+        setToken(null);
+      } else if (!getCachedUser<User>()) {
+        setUser(null);
+      }
     }
   }, []);
 
   useEffect(() => {
+    // Returning user: render right away from the cached profile and let the
+    // pages start their own requests in parallel with the /me check, instead
+    // of waiting one round trip before anything else is even asked for.
+    const cached = getCachedUser<User>();
+    // Read here, not in useState's initializer: the server render has no
+    // localStorage, so seeding state at init would break hydration.
+    if (cached) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUser(cached);
+      setLoading(false);
+    }
     (async () => {
       await refresh();
       setLoading(false);

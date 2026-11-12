@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/resources";
 import type { Task, TaskScope } from "@/lib/types";
 import { ApiError } from "@/lib/api";
+import { peek, remember } from "@/lib/cache";
 import { Card, ErrorAlert, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/clsx";
 import { STATUS_META, STATUS_SORT_RANK, StatusToggle, nextStatus } from "@/components/TaskStatus";
 import { TaskLog } from "@/components/TaskLog";
 
 type Lists = Record<TaskScope, Task[]>;
+
+const CACHE_KEY = "tasks:own";
 
 const COLUMNS: {
   scope: TaskScope;
@@ -38,8 +41,9 @@ function sortByStatus(tasks: Task[]): Task[] {
  * (click the text to rename).
  */
 export function TaskBoard() {
-  const [lists, setLists] = useState<Lists>({ today: [], week: [] });
-  const [loading, setLoading] = useState(true);
+  // Seed from the last copy so the board shows instantly; `load` refreshes it.
+  const [lists, setLists] = useState<Lists>(() => peek<Lists>(CACHE_KEY) ?? { today: [], week: [] });
+  const [loading, setLoading] = useState(() => peek<Lists>(CACHE_KEY) === null);
   const [error, setError] = useState<string | null>(null);
 
   // Mirror of `lists` so drag handlers always compute from the latest order
@@ -49,13 +53,19 @@ export function TaskBoard() {
     listsRef.current = lists;
   }, [lists]);
 
+  // Keep the cached copy in step with every edit, not just with loads.
+  useEffect(() => {
+    if (!loading) remember(CACHE_KEY, lists);
+  }, [lists, loading]);
+
   const [sorting, setSorting] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const draggingFrom = useRef<TaskScope | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    // With a cached board on screen, refresh quietly instead of flashing a spinner.
+    if (peek<Lists>(CACHE_KEY) === null) setLoading(true);
     setError(null);
     try {
       const [today, week] = await Promise.all([

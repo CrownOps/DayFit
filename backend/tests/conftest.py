@@ -112,3 +112,13 @@ def login(_auth_state):
         return user
 
     return _login
+
+
+@pytest.fixture(autouse=True)
+def _fresh_gcs_pulse_cache():
+    """GCS Pulse 조회 캐시는 프로세스 전역이라, 테스트끼리 결과가 새지 않게 비운다."""
+    from app.services import gcs_pulse_client
+
+    gcs_pulse_client.clear_cache()
+    yield
+    gcs_pulse_client.clear_cache()
